@@ -1,0 +1,133 @@
+name: Docker - AIStudioToAPI Prefill Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-aistudio-prefill-fix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOCKERHUB_USERNAME_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_USERNAME_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+  DOCKER_USERNAME_SECRET: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_USERNAME_VAR: ${{ vars.DOCKER_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  DOCKERHUB_ACCESS_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+  DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout AIStudioToAPI fork
+        uses: actions/checkout@v4
+        with:
+          repository: dlaq/AIStudioToAPI
+          ref: main
+
+      - name: Apply and validate Assistant Prefill patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check patches/assistant-prefill-compat.patch
+          git apply patches/assistant-prefill-compat.patch
+          node --check src/core/FormatConverter.js
+          npm ci --ignore-scripts
+          node <<'NODE'
+          const assert = require('assert');
+          const FormatConverter = require('./src/core/FormatConverter');
+          const logger = new Proxy({}, { get: () => () => {} });
+          const converter = new FormatConverter(logger, { config: {} });
+          (async () => {
+            const openai = await converter.translateOpenAIToGoogle({
+              model: 'gemini-3.7-flash',
+              messages: [
+                { role: 'user', content: 'Continue.' },
+                { role: 'assistant', content: '<thinking>\n' },
+              ],
+            });
+            assert.strictEqual(openai.googleRequest.contents.at(-1).role, 'user');
+
+            const history = await converter.translateOpenAIToGoogle({
+              model: 'gemini-3.7-flash',
+              messages: [
+                { role: 'user', content: 'First.' },
+                { role: 'assistant', content: 'Earlier answer.' },
+                { role: 'user', content: 'Latest.' },
+              ],
+            });
+            assert.strictEqual(history.googleRequest.contents[1].role, 'model');
+
+            const claude = await converter.translateClaudeToGoogle({
+              model: 'gemini-3.7-flash',
+              max_tokens: 128,
+              messages: [
+                { role: 'user', content: 'Continue.' },
+                { role: 'assistant', content: '<thinking>\n' },
+              ],
+            });
+            assert.strictEqual(claude.googleRequest.contents.at(-1).role, 'user');
+            console.log('AIStudioToAPI Assistant Prefill smoke tests passed.');
+          })().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Resolve Docker Hub credentials
+        id: docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          username="${DOCKERHUB_USERNAME_SECRET:-${DOCKERHUB_USERNAME_VAR:-${DOCKER_USERNAME_SECRET:-${DOCKER_USERNAME_VAR:-}}}}"
+          token="${DOCKERHUB_TOKEN:-${DOCKERHUB_ACCESS_TOKEN:-${DOCKERHUB_PASSWORD:-${DOCKER_PASSWORD:-${DOCKER_TOKEN:-}}}}}"
+          if [ -z "$username" ] || [ -z "$token" ]; then
+            echo "::error::Docker Hub credentials are missing in this repository."
+            exit 1
+          fi
+          image="$(printf '%s/aistudio-to-api' "$username" | tr '[:upper:]' '[:lower:]')"
+          echo "::add-mask::$token"
+          printf '%s' "$token" | docker login --username "$username" --password-stdin
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push AIStudioToAPI
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.docker.outputs.image }}:v1.3.7-assistant-prefill-fix
+            ${{ steps.docker.outputs.image }}:assistant-prefill-fix
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+
+      - name: Publish summary
+        run: |
+          {
+            echo "## AIStudioToAPI patched Docker Hub image"
+            echo
+            echo '```text'
+            echo "${{ steps.docker.outputs.image }}:v1.3.7-assistant-prefill-fix"
+            echo '```'
+            echo
+            echo "Platforms: linux/amd64, linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"
