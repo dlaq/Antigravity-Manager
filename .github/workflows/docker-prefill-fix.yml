@@ -1,0 +1,116 @@
+name: Docker - Assistant Prefill Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "patches/chat-completions-assistant-prefill.patch"
+      - ".github/workflows/docker-prefill-fix.yml"
+      - "docker/**"
+      - "src-tauri/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - "tsconfig.node.json"
+      - "tailwind.config.js"
+      - "postcss.config.cjs"
+      - "index.html"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  DOCKERHUB_USERNAME_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_USERNAME_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+  DOCKER_USERNAME_SECRET: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_USERNAME_VAR: ${{ vars.DOCKER_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  DOCKERHUB_ACCESS_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+  DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+  DOCKERHUB_IMAGE_VAR: ${{ vars.DOCKERHUB_IMAGE }}
+  DOCKERHUB_REPOSITORY_VAR: ${{ vars.DOCKERHUB_REPOSITORY }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate and apply Chat Completions prefill patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check patches/chat-completions-assistant-prefill.patch
+          git apply patches/chat-completions-assistant-prefill.patch
+
+          grep -Fq 'rewrite_terminal_assistant_prefill(messages)' \
+            src-tauri/src/proxy/handlers/openai.rs
+          grep -Fq '[Chat Completions Compat] Rewrote terminal plain-text assistant prefill' \
+            src-tauri/src/proxy/handlers/openai.rs
+
+          echo "Assistant Prefill compatibility patch applied successfully."
+
+      - name: Resolve Docker Hub credentials and image name
+        id: docker
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          username="${DOCKERHUB_USERNAME_SECRET:-${DOCKERHUB_USERNAME_VAR:-${DOCKER_USERNAME_SECRET:-${DOCKER_USERNAME_VAR:-}}}}"
+          token="${DOCKERHUB_TOKEN:-${DOCKERHUB_ACCESS_TOKEN:-${DOCKERHUB_PASSWORD:-${DOCKER_PASSWORD:-${DOCKER_TOKEN:-}}}}}"
+
+          if [ -z "$username" ]; then
+            echo "::error::Docker Hub username is not configured. Supported names: DOCKERHUB_USERNAME or DOCKER_USERNAME (Secret or Variable)."
+            exit 1
+          fi
+          if [ -z "$token" ]; then
+            echo "::error::Docker Hub credential is not configured. Supported Secrets: DOCKERHUB_TOKEN, DOCKERHUB_ACCESS_TOKEN, DOCKERHUB_PASSWORD, DOCKER_PASSWORD, DOCKER_TOKEN."
+            exit 1
+          fi
+
+          image="${DOCKERHUB_IMAGE_VAR:-${DOCKERHUB_REPOSITORY_VAR:-$username/antigravity-manager}}"
+          image="$(printf '%s' "$image" | tr '[:upper:]' '[:lower:]')"
+
+          echo "::add-mask::$token"
+          printf '%s' "$token" | docker login --username "$username" --password-stdin
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push patched image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.docker.outputs.image }}:v4.6.7-assistant-prefill-fix
+            ${{ steps.docker.outputs.image }}:assistant-prefill-fix
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+
+      - name: Publish deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## Patched Docker image"
+            echo
+            echo '```text'
+            echo "${{ steps.docker.outputs.image }}:v4.6.7-assistant-prefill-fix"
+            echo '```'
+            echo
+            echo "The image is built from docker/Dockerfile after applying patches/chat-completions-assistant-prefill.patch."
+          } >> "$GITHUB_STEP_SUMMARY"
