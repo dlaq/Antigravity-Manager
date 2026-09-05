@@ -1,7 +1,7 @@
 diff --git a/src-tauri/src/proxy/handlers/openai.rs b/src-tauri/src/proxy/handlers/openai.rs
 --- a/src-tauri/src/proxy/handlers/openai.rs
 +++ b/src-tauri/src/proxy/handlers/openai.rs
-@@ -1690,6 +1690,18 @@ pub async fn handle_chat_completions(
+@@ -1690,6 +1690,19 @@ pub async fn handle_chat_completions(
          if let Some(obj) = body.as_object_mut() {
              obj.remove("instructions");
          }
