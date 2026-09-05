@@ -40,7 +40,7 @@ jobs:
           git apply --check patches/assistant-prefill-compat.patch
           git apply patches/assistant-prefill-compat.patch
           node --check src/core/FormatConverter.js
-          npm ci --ignore-scripts
+          npm install --no-save --ignore-scripts --no-audit --no-fund axios@^1.13.2 mime-types@^3.0.2
           node <<'NODE'
           const assert = require('assert');
           const FormatConverter = require('./src/core/FormatConverter');
