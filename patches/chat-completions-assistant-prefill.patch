@@ -1,74 +1,12 @@
 diff --git a/src-tauri/src/proxy/handlers/openai.rs b/src-tauri/src/proxy/handlers/openai.rs
 --- a/src-tauri/src/proxy/handlers/openai.rs
 +++ b/src-tauri/src/proxy/handlers/openai.rs
-@@
- fn rewrite_terminal_assistant_prefill(messages: &mut [Value]) -> bool {
-@@
-     message.insert("role".to_string(), Value::String("user".to_string()));
-     true
- }
-+
-+fn rewrite_chat_completions_terminal_assistant_prefill(body: &mut Value) -> bool {
-+    body.get_mut("messages")
-+        .and_then(Value::as_array_mut)
-+        .is_some_and(|messages| rewrite_terminal_assistant_prefill(messages))
-+}
- 
- fn is_tool_history_message(message: &Value) -> bool {
-@@
-     use super::responses_message_parts;
-+    use super::rewrite_chat_completions_terminal_assistant_prefill;
-     use super::rewrite_terminal_assistant_prefill;
-@@
-     fn responses_compat_rewrites_only_terminal_plain_text_assistant_prefill() {
-@@
-         assert_eq!(
-             converted["messages"],
-             json!([{"role": "user", "content": "Choose the next action."}])
-         );
-     }
-+
-+    #[test]
-+    fn chat_completions_compat_rewrites_terminal_plain_text_assistant_prefill() {
-+        let mut body = json!({
-+            "model": "gemini-3.7-flash",
-+            "messages": [
-+                {"role": "system", "content": "Follow the preset."},
-+                {"role": "user", "content": "Start writing."},
-+                {
-+                    "role": "assistant",
-+                    "content": "Assistant prefill\n\n<thinking>\n"
-+                }
-+            ],
-+            "stream": true
-+        });
-+
-+        assert!(rewrite_chat_completions_terminal_assistant_prefill(&mut body));
-+        assert_eq!(body["messages"][2]["role"], "user");
-+
-+        let request: OpenAIRequest =
-+            serde_json::from_value(body).expect("valid Chat Completions request");
-+        let (upstream, _, _, _) =
-+            transform_openai_request(&request, "project", "gemini-3.7-flash", None);
-+        let contents = upstream["request"]["contents"]
-+            .as_array()
-+            .expect("Gemini contents");
-+        assert_eq!(
-+            contents.last().and_then(|item| item.get("role")),
-+            Some(&json!("user"))
-+        );
-+    }
- 
-     #[test]
-     fn responses_compat_drops_only_leading_orphan_tool_history() {
-@@
-     if is_responses_format {
-@@
+@@ -1690,6 +1690,18 @@ pub async fn handle_chat_completions(
          if let Some(obj) = body.as_object_mut() {
              obj.remove("instructions");
          }
      }
-+
+ 
 +    // Gemini rejects requests whose final content turn has role=model. SillyTavern
 +    // represents Assistant Prefill in Chat Completions as a terminal assistant
 +    // message, which transform_openai_request would otherwise map to role=model.
@@ -76,10 +14,10 @@ diff --git a/src-tauri/src/proxy/handlers/openai.rs b/src-tauri/src/proxy/handle
 +    // terminal, non-empty, plain-text assistant message without tool_calls is
 +    // rewritten. Historical assistant turns, tool calls and multimodal content
 +    // are deliberately left untouched.
-+    if rewrite_chat_completions_terminal_assistant_prefill(&mut body) {
-+        debug!(
-+            "[Chat Completions Compat] Rewrote terminal plain-text assistant prefill for Gemini compatibility"
-+        );
++    if let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) {
++        if rewrite_terminal_assistant_prefill(messages) {
++            debug!("[Chat Completions Compat] Rewrote terminal plain-text assistant prefill for Gemini compatibility");
++        }
 +    }
- 
++
      let normalized_interaction_ledger = body.get("_interaction_ledger").cloned();
