@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "patches/chat-completions-assistant-prefill.patch"
+      - "patches/gemini-penalty-compat.patch"
       - ".github/workflows/docker-prefill-fix.yml"
       - "docker/**"
       - "src-tauri/**"
@@ -40,25 +41,33 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate and apply Chat Completions prefill patch
+      - name: Validate and apply compatibility patches
         shell: bash
         run: |
           set -euo pipefail
+
           git apply --check patches/chat-completions-assistant-prefill.patch
           git apply patches/chat-completions-assistant-prefill.patch
+
+          git apply --check patches/gemini-penalty-compat.patch
+          git apply patches/gemini-penalty-compat.patch
 
           grep -Fq 'rewrite_terminal_assistant_prefill(messages)' \
             src-tauri/src/proxy/handlers/openai.rs
           grep -Fq '[Chat Completions Compat] Rewrote terminal plain-text assistant prefill' \
             src-tauri/src/proxy/handlers/openai.rs
+          grep -Fq 'is_native_gemini_model' \
+            src-tauri/src/proxy/mappers/openai/request.rs
+          grep -Fq '[OpenAI-Compat] Dropped presence/frequency penalty for Gemini model' \
+            src-tauri/src/proxy/mappers/openai/request.rs
 
-          echo "Assistant Prefill compatibility patch applied successfully."
+          echo "Assistant Prefill and Gemini penalty compatibility patches applied successfully."
 
       - name: Resolve Docker Hub credentials and image name
         id: docker
@@ -119,5 +128,5 @@ jobs:
             echo
             echo "Platforms: linux/amd64, linux/arm64"
             echo "Upstream base: Antigravity Manager v4.6.9"
-            echo "The image is built from docker/Dockerfile after applying patches/chat-completions-assistant-prefill.patch."
+            echo "Compatibility patches: Assistant Prefill + Gemini penalty filtering."
           } >> "$GITHUB_STEP_SUMMARY"
