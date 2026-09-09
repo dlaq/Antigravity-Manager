@@ -1,0 +1,33 @@
+diff --git a/src-tauri/src/proxy/mappers/openai/request.rs b/src-tauri/src/proxy/mappers/openai/request.rs
+--- a/src-tauri/src/proxy/mappers/openai/request.rs
++++ b/src-tauri/src/proxy/mappers/openai/request.rs
+@@ -899,11 +899,20 @@ pub fn transform_openai_request_with_session(
+         gen_config["candidateCount"] = json!(n);
+     }
+ 
+-    if let Some(presence_penalty) = request.presence_penalty {
+-        gen_config["presencePenalty"] = json!(presence_penalty);
+-    }
+-    if let Some(frequency_penalty) = request.frequency_penalty {
+-        gen_config["frequencyPenalty"] = json!(frequency_penalty);
++    // Some Gemini models reject penalty fields outright with
++    // `Penalty is not enabled for this model`, even when the client sends 0.
++    // SillyTavern/OpenAI-compatible clients commonly include these fields, so
++    // omit them entirely for Gemini while preserving passthrough behavior for
++    // other model families handled by this mapper.
++    let is_native_gemini_model =
++        mapped_model_lower.contains("gemini") && !mapped_model_lower.contains("claude");
++    if is_native_gemini_model {
++        if request.presence_penalty.is_some() || request.frequency_penalty.is_some() {
++            tracing::debug!("[OpenAI-Compat] Dropped presence/frequency penalty for Gemini model {}", mapped_model);
++        }
++    } else {
++        if let Some(presence_penalty) = request.presence_penalty {
++            gen_config["presencePenalty"] = json!(presence_penalty);
++        }
++        if let Some(frequency_penalty) = request.frequency_penalty {
++            gen_config["frequencyPenalty"] = json!(frequency_penalty);
++        }
+     }
+     if let Some(seed) = request.seed {
+         gen_config["seed"] = json!(seed);
