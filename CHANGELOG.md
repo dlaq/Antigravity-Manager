@@ -3,6 +3,43 @@
 > 完整版本历史记录。返回项目主页请查看 [README.md](README.md) | [English Changelog](CHANGELOG_EN.md)。
 
 *   **版本演进**:
+    *   **v4.6.9 (2026-09-08)**:
+        -   **[核心修复] 遵循 store:false 抑制 HTTP 会话持久化与全局工具调用缓存驻留 (PR #3408)**:
+            -   **严格响应 store:false 参数**: 在 HTTP Responses 代理路径中，当全量重放（full-replay）请求显式传入 `store:false` 时，不再创建多余的会话快照与后台保存任务，大幅抑制大长文本重放时内存持续攀升。
+            -   **优化全局工具缓存写入门槛**: 在下发完整工具参数与完成事件的同时，避免将 `store:false` 下的工具调用冗余写入全局 Tool-Call 缓存，同时安全加固非流式响应持久化守卫。
+        -   **[调度与稳定性] 彻底修复 429 故障转移死循环、模型级熔断器绕过与配额保护归一化失效 (PR #3395)**:
+            -   **黏性会话对齐模型级熔断锁**: 修复黏性会话在检查账号可用性时传入全局锁导致的误判缺陷，精准结合目标模型检测 `RESOURCE_EXHAUSTED` 熔断状态，杜绝重复向已熔断账号派发请求。
+            -   **硬配额耗尽跳过宽限重试并立即切号**: 当遇到真实的资源耗尽（429 / 529）时，绕过 `GraceRetry` 并立即解绑该会话关联的账号，消除负载均衡与缓存优先模式下的 429 重试死循环。
+            -   **前端配置模型与标准配额分组 ID 归一化**: 解决前端 UI 配置具体模型 ID（如 `gemini-3.7-flash`）时未与后端标准分组 ID（`gemini-3-flash`）对齐导致配额保护静默失效的问题。
+        -   **[多轮与 Agent 兼容] 修复自主 Agent 首轮 Tool Call 导致 Gemini 400 轮次报错 (PR #3396)**:
+            -   **首轮自动注入轻量 User Primer**: 针对 Hermes Agent 等自主智能体以 Assistant/Tool Call 作为首个非 System 轮次的场景，在最前端注入引导提示词，满足 Google Gemini 关于 `functionCall` 必须紧跟 `user` 或 `functionResponse` 轮次的硬性约束，彻底消除 `400 INVALID_ARGUMENT`。
+            -   **空文本用户轮次防御保留**: 避免过滤空文本时意外丢失用户轮次，维护 Gemini 严格的轮次交替序列。
+        -   **[OpenAI & Codex 协议演进] 拆分路由与签名标识、生成全新 Request ID 与 Flash 思考映射 (PR #3404, PR #3405, PR #3406)**:
+            -   **解耦会话路由与签名识别**: 分离会话路由 Key（Routing Identity）与缓存签名 Key（Signature Identity），补全非流式 HTTP 请求的会话历史记录链。
+            -   **单次上游请求唯一 Request ID**: 每次向上游发送请求时均基于时间戳与随机 UUID 动态生成全新唯一 ID，避免复用相同 ID 被上游判定为重复请求或关联至旧 429。
+            -   **分级 Flash 思考档位精准映射**: 识别分级 Flash 模型的 `reasoning_effort` 参数并映射到上游 Gemini 的 `thinkingLevel` 配置。
+        -   **[Claude 协议标准] 规范 message_start 事件始终包含 usage 字段 (PR #3397)**:
+            -   **首包 usage 兜底填充**: 当上游开源模型首个数据块不含 Token 统计元数据时，自动向 `message_start` 事件注入 `{input_tokens: 0, output_tokens: 0}` 兜底对象，彻底解决 OpenCode / `@ai-sdk/anthropic` 等严格校验客户端的类型崩溃问题。
+        -   **[HTTP API & CLI] 修复 /accounts/switch 丢失 targetIde 导致 agy 刷新 Token 意外重启 IDE (Issue #3399)**:
+            -   **透传 targetIde 激活免杀免重启通道**: 修复 `POST /accounts/switch` 请求体丢失 `target_ide` 字段并硬编码传 `None` 的缺陷。现支持解析可选的 `targetIde` 参数（如 `"agy"`），使自动化流水线或 CLI 刷新凭据时仅写系统 Keyring，避免强制杀死并重启正在运行的 Antigravity IDE。
+    *   **v4.6.8 (2026-09-06)**:
+        -   **[核心修复] 彻底修复冷启动无条件 VACUUM 导致磁盘 I/O 饱和与日志保留时间戳单位错误 (Issue #3386)**:
+            -   **对齐保留清理时间戳毫秒单位**: 修复此前因清理函数 `cleanup_old_logs` 使用秒级时间戳（`timestamp()`）计算 30 天截断点，而请求日志存储使用毫秒时间戳（`timestamp_millis()`），导致过期判断永远无法命中、旧日志从未被清理且数据库只增不减的缺陷。统一基准为毫秒级计算（`now.timestamp_millis() - days * 24 * 3600 * 1000`）。
+            -   **按需门槛式 VACUUM 碎片整理**: 移除了应用启动初始化 `ProxyMonitor` 时对 SQLite 数据库无条件执行全量 `VACUUM` 的行为。改为仅在实际删除行数达到合理门槛（`deleted >= 500`）时才进行空间整理，且容忍整理过程中的非致命错误；彻底解决大容量日志库（数 GB）在冷启动时即使清理 0 条记录仍无休止全盘重写导致 SSD/NVMe 磁盘持续 100% 占满与系统卡顿的问题。
+        -   **[功能优化] 账号表格支持点击表头按周配额重置时间与最后使用时间排序 (Issue #3387)**:
+            -   **支持重置时间与使用时间双维度升降序**: 允许用户直接点击「周配额/模型配额」或「最后使用」表头切换排序模式（`升序 -> 降序 -> 恢复默认`）。在周配额视图下自动提取 Gemini / Claude 模型组的最快配额恢复时间点，帮助用户快速将即将恢复额度的账号排到最前。
+            -   **列排序与手动拖拽智能互斥保护**: 激活表头列排序时，自动挂起 `@dnd-kit` 的手动拖拽事件并为抓手图标提供明确提示态，避免排序覆盖与交互冲突。
+        -   **[Linux 修复] 修复 niri / Hyprland 等独立合成器上窗口全黑问题 (Issue #3388, PR #3389)**:
+            -   **取消仅因 DISPLAY 存在即强制切 X11 行为**: niri / Hyprland / sway / river / labwc / wayfire 常年挂载 Xwayland 兼容层，此前因检测到 `DISPLAY` 被强行切入 X11 导致 WebKitGTK 主界面图层全黑。调整为上述合成器保持原生 Wayland，GNOME / KDE 的历史 X11 兼容回退保持不变。
+            -   **按需动态禁用 WebKit DMA-BUF 渲染器**: 在 Wayland 环境且（上述合成器或本机加载了 NVIDIA 专有驱动）时，若用户未自行设置，自动注入 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 避免黑屏；GNOME + AMD/Intel 核显保留 DMA-BUF 硬件加速快路径。已有环境变量严格尊重不覆盖。
+        -   **[核心修复] 彻底修复 OpenAI 接口下非 `-thinking` 后缀 Claude 模型多轮对话报 400 thinking.signature 错误 (Issue #3391)**:
+            -   **扩展 Claude 思维模式识别范围**: 修复此前仅依据 `-thinking` 后缀识别 Claude 思考模式，导致 `claude-sonnet-4-6` 等基础模型在显式启用 `thinking: { type: "enabled" }` 时漏判、从而绕过历史签名校验防御机制的缺陷。
+            -   **缺失思考历史安全降级与杜绝伪造思考块**: 当多轮对话中存在缺少 `reasoning_content` 且无法提供有效签名的历史 Assistant 消息时，针对 Claude 模型无条件安全降级为关闭思考，并杜绝注入上游无法校验的伪造思考占位块，彻底消除 `400 messages.N.content.0.thinking.signature: Field required`。
+            -   **400 签名错误重试彻底关闭思考配置**: 在捕获到签名失效触发 400 重试时，显式将 `openai_req.thinking` 置空并剥除模型 `-thinking` 后缀，保证下一次重试请求彻底以纯文本模式构造，杜绝多次重试均重复报 400 的死循环。
+        -   **[核心修复] 修复 Anthropic 协议代理 SSE 超时卡顿、工具调用内容泄漏及思考中断 Loop 缺陷 (Issue #3393)**:
+            -   **Anthropic 协议流式代理超时收紧与僵尸流熔断**: 将 peek 首包探测等待超时由 300s 显著收紧至 30s，外层 SSE 空闲保活超时由 300s 降至 120s；内层 SSE 心跳等待由 60s 降至 20s，并新增最多连续 5 次无数据心跳（100s）主动终止保护，彻底消除响应迟缓及上游卡死引发的下游连接长时间挂死问题。
+            -   **杜绝无参数工具调用导致输入泄露与客户端报错**: 修复流式 `process_function_call` 在处理无参数或空参数工具（如 `EnterPlanMode`）时，因跳过 `input_json_delta` 导致工具输入块不完整、进而引发部分客户端报错或将工具内容错误回显为正文文本的问题，现在始终保证发送完整的 `input_json_delta`（`partial_json: "{}"`）。
+            -   **修复思考链中断恢复路径缺少结束事件导致客户端死循环**: 修复思考链被意外中断并触发恢复逻辑时，因依赖受 `message_stop_sent` 状态守卫的间接调用导致未真正发送结束帧的问题；改为直接向客户端显式输出 `message_delta` 与 `message_stop` 事件，彻底避免 Claude 等客户端一直等待响应而陷入无限 loop。
     *   **v4.6.7 (2026-09-04)**:
         -   **[核心修复] 彻底修复多轮 Agent 对话上下文异常膨胀与 Session 历史重复追加 BUG (Issue #3382)**:
             -   **解除工具调用历史消息的思考链压缩阻断**: 修复此前因 `!has_tool_calls` 守卫过于严格，导致 OpenClaw 等工具调用密集的 Agent 场景下历史 Assistant 消息的长思考文本（`reasoning_content`）完全无法被压缩的问题。允许在保留合法工具调用及其 `thoughtSignature` 前提下，将历史长思考精简为占位符 `...`，彻底释放数十万 Token 的冗余负担并确保 Google API 签名验证正常通过。

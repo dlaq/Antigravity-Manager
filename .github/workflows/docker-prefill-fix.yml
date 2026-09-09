@@ -101,7 +101,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ steps.docker.outputs.image }}:v4.6.7-assistant-prefill-fix
+            ${{ steps.docker.outputs.image }}:v4.6.9-assistant-prefill-fix
             ${{ steps.docker.outputs.image }}:assistant-prefill-fix
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -114,9 +114,10 @@ jobs:
             echo "## Patched multi-arch Docker image"
             echo
             echo '```text'
-            echo "${{ steps.docker.outputs.image }}:v4.6.7-assistant-prefill-fix"
+            echo "${{ steps.docker.outputs.image }}:v4.6.9-assistant-prefill-fix"
             echo '```'
             echo
             echo "Platforms: linux/amd64, linux/arm64"
+            echo "Upstream base: Antigravity Manager v4.6.9"
             echo "The image is built from docker/Dockerfile after applying patches/chat-completions-assistant-prefill.patch."
           } >> "$GITHUB_STEP_SUMMARY"
