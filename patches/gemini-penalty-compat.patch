@@ -1,7 +1,8 @@
 diff --git a/src-tauri/src/proxy/mappers/openai/request.rs b/src-tauri/src/proxy/mappers/openai/request.rs
 --- a/src-tauri/src/proxy/mappers/openai/request.rs
 +++ b/src-tauri/src/proxy/mappers/openai/request.rs
-@@ -899,11 +899,20 @@ pub fn transform_openai_request_with_session(
+@@ -898,13 +898,26 @@
+     if let Some(n) = request.n {
          gen_config["candidateCount"] = json!(n);
      }
  
@@ -31,3 +32,4 @@ diff --git a/src-tauri/src/proxy/mappers/openai/request.rs b/src-tauri/src/proxy
      }
      if let Some(seed) = request.seed {
          gen_config["seed"] = json!(seed);
+     }
