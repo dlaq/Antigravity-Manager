@@ -27,18 +27,30 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout AIStudioToAPI fork
+      - name: Checkout patch repository
         uses: actions/checkout@v4
         with:
           repository: dlaq/AIStudioToAPI
           ref: main
+          path: patch-source
+
+      - name: Checkout latest upstream AIStudioToAPI
+        uses: actions/checkout@v4
+        with:
+          repository: iBUHub/AIStudioToAPI
+          ref: aba601192d9cedad7fe0521769e6e627fd4f660f
+          path: app
+
+      - name: Copy compatibility patch
+        run: cp patch-source/assistant-prefill-compat.patch app/assistant-prefill-compat.patch
 
       - name: Apply and validate Assistant Prefill patch
+        working-directory: app
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check patches/assistant-prefill-compat.patch
-          git apply patches/assistant-prefill-compat.patch
+          git apply --check assistant-prefill-compat.patch
+          git apply assistant-prefill-compat.patch
           node --check src/core/FormatConverter.js
           npm install --no-save --ignore-scripts --no-audit --no-fund axios@^1.13.2 mime-types@^3.0.2
           node <<'NODE'
@@ -109,12 +121,12 @@ jobs:
       - name: Build and push AIStudioToAPI
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: Dockerfile
+          context: ./app
+          file: ./app/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ steps.docker.outputs.image }}:v1.3.7-assistant-prefill-fix
+            ${{ steps.docker.outputs.image }}:main-aba6011-assistant-prefill-fix
             ${{ steps.docker.outputs.image }}:assistant-prefill-fix
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -126,8 +138,9 @@ jobs:
             echo "## AIStudioToAPI patched Docker Hub image"
             echo
             echo '```text'
-            echo "${{ steps.docker.outputs.image }}:v1.3.7-assistant-prefill-fix"
+            echo "${{ steps.docker.outputs.image }}:main-aba6011-assistant-prefill-fix"
             echo '```'
             echo
             echo "Platforms: linux/amd64, linux/arm64"
+            echo "Upstream source: iBUHub/AIStudioToAPI@aba601192d9cedad7fe0521769e6e627fd4f660f"
           } >> "$GITHUB_STEP_SUMMARY"
