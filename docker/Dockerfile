@@ -1,7 +1,7 @@
 # --- Upstream Source Stage ---
 FROM alpine:3.20 AS source
 RUN apk add --no-cache git ca-certificates
-RUN git clone --depth 1 --branch v4.7.1 https://github.com/lbjlaq/Antigravity-Manager.git /src
+RUN git clone --depth 1 --branch v4.7.6 https://github.com/lbjlaq/Antigravity-Manager.git /src
 COPY patches/chat-completions-assistant-prefill.patch /patches/chat-completions-assistant-prefill.patch
 COPY patches/gemini-penalty-compat.patch /patches/gemini-penalty-compat.patch
 RUN cd /src \
