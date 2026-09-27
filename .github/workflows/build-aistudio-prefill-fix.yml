@@ -1,5 +1,7 @@
 name: Docker - AIStudioToAPI Prefill Fix
 
+# Rebuild the current AIStudio compatibility image from the fork's latest patch.
+
 on:
   push:
     branches: [main]
