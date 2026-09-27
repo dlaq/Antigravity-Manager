@@ -1,7 +1,7 @@
 # --- Upstream Source Stage ---
 FROM alpine:3.20 AS source
 RUN apk add --no-cache git ca-certificates
-RUN git clone --depth 1 --branch v4.7.6 https://github.com/lbjlaq/Antigravity-Manager.git /src
+RUN git clone --depth 1 --branch v4.8.3 https://github.com/lbjlaq/Antigravity-Manager.git /src
 COPY patches/chat-completions-assistant-prefill.patch /patches/chat-completions-assistant-prefill.patch
 COPY patches/gemini-penalty-compat.patch /patches/gemini-penalty-compat.patch
 RUN cd /src \
@@ -105,6 +105,7 @@ RUN if [ "$USE_MIRROR" = "true" ] || ( [ "$USE_MIRROR" = "auto" ] && ! timeout 3
     fi
 
 RUN apt-get update && apt-get install -y \
+    curl \
     libssl3 \
     libsqlite3-0 \
     ca-certificates \
@@ -122,4 +123,10 @@ ENV RUST_LOG=info
 ENV PORT=8045
 
 EXPOSE 8045
+
+# Healthcheck for container orchestration
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://127.0.0.1:8045/health || exit 1
+
+# Run the application in headless mode
 ENTRYPOINT ["/app/antigravity-tools", "--headless"]

@@ -13,6 +13,9 @@ interface UpdateInfo {
   current_version: string;
   download_url: string;
   source?: string;
+  proxy_url?: string;
+  channel?: 'stable' | 'beta';
+  updater_json_url?: string;
 }
 
 type UpdateState = 'checking' | 'downloading' | 'ready' | 'error' | 'none' | 'manual';
@@ -70,7 +73,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
       setUpdateState('downloading');
       setTimeout(() => setIsVisible(true), 100);
 
-      const update = await tauriCheck();
+      const update = await tauriCheck(
+        info.proxy_url ? { proxy: info.proxy_url } : undefined
+      );
       if (!update) {
         // updater.json not ready yet or no update via native channel
         console.warn('Native updater returned null');
@@ -139,10 +144,10 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
         relative overflow-hidden
         w-80 p-5
         rounded-2xl
-        border border-white/20 dark:border-white/10
-        shadow-[0_8px_32px_0_rgba(31,38,135,0.15)]
+        border border-white/20 dark:border-base-200
+        shadow-[0_8px_32px_0_rgba(0,0,0,0.3)]
         backdrop-blur-xl
-        bg-white/70 dark:bg-slate-900/60
+        bg-white/70 dark:bg-base-100/90
         group
       ">
         <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/30 transition-colors duration-500" />
@@ -165,9 +170,16 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
                     : t('update_notification.title')}
                 </h3>
                 {updateInfo && (
-                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                    v{updateInfo.latest_version}
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                      v{updateInfo.latest_version}
+                    </p>
+                    {updateInfo.channel === 'beta' && (
+                      <span className="px-1.5 py-0.2 text-[10px] font-semibold rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                        Beta
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -205,7 +217,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
           {/* Progress bar during download */}
           {updateState === 'downloading' && (
             <div className="mb-4">
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div className="w-full bg-gray-200 dark:bg-base-200 rounded-full h-2">
                 <div
                   className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${downloadProgress}%` }}
@@ -264,7 +276,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
                       const { openUrl } = await import('@tauri-apps/plugin-opener');
                       await openUrl(updateInfo.download_url);
                     } catch (e) {
-                      window.open(updateInfo.download_url, '_blank');
+                      window.open(updateInfo.download_url, '_blank', 'noopener,noreferrer');
                     }
                   }
                 }}

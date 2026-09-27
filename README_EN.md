@@ -1,15 +1,17 @@
 # Antigravity Tools 🚀
-> Professional AI Account Management & Protocol Proxy System (v4.6.9)
+> Professional Account Management & Protocol Proxy System for AI Services (v4.8.3)
 
 <div align="center">
-  <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+  <img src="public/icon.png" width="100" height="100" alt="Antigravity Tools Logo">
+  <h3>Antigravity Tools</h3>
+  <p>Multi-platform automation & multi-account matrix dispatch console</p>
 
-  <h3>Your Personal High-Performance AI Gateway</h3>
-  <p>Not just account management, but the ultimate solution to break API barriers.</p>
-  
   <p>
+    <a href="https://github.com/lbjlaq/Antigravity-Manager/releases">
+      <img src="https://img.shields.io/github/v/release/lbjlaq/Antigravity-Manager?color=blue&style=flat-square" alt="GitHub release">
+    </a>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-4.6.9-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-4.8.3-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
     <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
@@ -42,7 +44,7 @@ By leveraging this app, you can transform common Web Sessions (Google/Anthropic)
 | Sponsor | Description |
 | :---: | :--- |
 | <img src="docs/images/packycode_logo.png" width="200" alt="PackyCode Logo"> | Thanks to **PackyCode** for sponsoring this project! PackyCode is a reliable and efficient API relay service provider, offering relays for various services such as Claude Code, Codex, and Gemini. PackyCode provides a special offer for users of this project: Register using [this link](https://www.packyapi.com/register?aff=Ctrler) and enter the **"Ctrler"** coupon code when topping up to enjoy a **10% discount**. |
-| <img src="docs/images/APIKEYFUN.png" width="200" alt="APIKEYFUN Logo"> | Thanks to **APIKEY.FUN** for sponsoring this project! APIKEY.FUN is a professional enterprise-grade AI relay station, dedicated to providing stable, efficient, and low-cost AI model API access services for enterprise and individual developers. The platform supports mainstream popular models such as Claude, OpenAI, and Gemini, with prices as low as 7% of the official original price. Register through [this exclusive link](https://apikey.fun/register?aff=Ctrler) for this project to enjoy an exclusive offer of up to **permanent 5% off on top-ups**. |
+| <img src="docs/images/APIKEYFUN.png" width="200" alt="APIKEYFUN Logo"> | Thanks to **APIKEY.FUN** for sponsoring this project! APIKEY.FUN is a professional enterprise-grade AI relay station, dedicated to providing stable, efficient, and low-cost AI model API access services for enterprise and individual developers. The platform supports mainstream popular models such as Claude, OpenAI, and Gemini, with prices as low as 7% of the official original price. Register through [this exclusive link](https://apikey.fan/register?aff=Ctrler) for this project to enjoy an exclusive offer of up to **permanent 5% off on top-ups**. |
 | <img src="docs/images/claudeapilogo.png" width="200" alt="Claude API Logo"> | Thanks to **Claude API** for supporting this project! claudeapi.com is a **Claude API** relay station built on **official and AWS channels**, focused exclusively on Claude, delivering high stability and low latency with full support for Claude Code. Exclusive offer: register via this [exclusive link](https://console.claudeapi.com/register?source=antigravity) to get **free trial credits — zero setup, get started instantly**; enjoy an extra **5% off** when you top up（Contact Support). |
 | <img src="docs/images/AICodeMirror.jpg" width="200" alt="AICodeMirror Logo"> | Thanks to **AICodeMirror** for sponsoring this project! AICodeMirror provides official high-stability relay services for Claude Code / Codex / Gemini CLI, supporting enterprise-grade concurrency, fast invoicing, and 24/7 dedicated technical support. Claude Code / Codex / Gemini official channels at 38% / 2% / 9% of original price, with extra discounts on top-ups! AICodeMirror offers special benefits for Antigravity-Manager users: register via [this link](https://aicodemirror.ai/register?invitecode=MV5XUM) to enjoy 20% off your first top-up, and enterprise customers can get up to 25% off! |
 
@@ -224,6 +226,7 @@ cd docker
 # 2. Start the service
 docker compose up -d
 ```
+> **Log rotation**: Compose limits JSON logs to `100m` per file and keeps `3` files by default to prevent unbounded growth.
 > **Access URL**: `http://localhost:8045` (Admin Console) | `http://localhost:8045/v1` (API Base)
 > **System Requirements**:
 > - **RAM**: **1GB** recommended (minimum 256MB).
@@ -231,7 +234,8 @@ docker compose up -d
 > - **Architecture**: Supports x86_64 and ARM64.
 > **See**: [Docker Deployment Guide (docker)](./docker/README.md)
 
-### 🛠️ Troubleshooting
+<details>
+<summary><b>🛠️ Troubleshooting - Click to expand</b></summary>
 
 #### macOS says "App is damaged"?
 Due to macOS security gatekeeper, non-App Store apps might show this. Run this in Terminal to fix:
@@ -249,6 +253,8 @@ env WEBKIT_DISABLE_DMABUF_RENDERER=1 ANTIGRAVITY_FORCE_WAYLAND=1 antigravity-too
 - `ANTIGRAVITY_FORCE_WAYLAND=1`: keep native Wayland (do not force X11)
 - `ANTIGRAVITY_FORCE_X11=1`: force X11 if you still need it
 - `WEBKIT_DISABLE_DMABUF_RENDERER=1`: disable the WebKit DMA-BUF renderer
+
+</details>
 
 ## 🔌 Quick Integration Examples
 
@@ -346,6 +352,9 @@ with open("output.png", "wb") as f:
 - **`n`**: Number of images to generate (1-10)
 - **`response_format`**: `"b64_json"` or `"url"` (Data URI)
 
+<details>
+<summary><b>🎨 Expand to view more image generation methods & parameter mapping rules (Chat API / Model Suffix / Cherry Studio)</b></summary>
+
 #### Method 2: Chat API + Parameters (✨ New)
 
 **All protocols** (OpenAI, Claude) Chat APIs now support direct `size` and `quality` parameters:
@@ -435,13 +444,16 @@ In clients that support OpenAI protocol (e.g., Cherry Studio), you can configure
 - `quality: "hd"` → Mapped to `4K` resolution
 - `quality: "medium"` → Mapped to `2K` resolution
 
+</details>
+
 ## 📝 Changelog
 
-> Latest version **v4.6.9** (2026-09-08): Comprehensive multi-protocol agent stability enhancements: decoupled Responses session routing & signature keys, honor store:false to eliminate memory leaks, fixed 429 failover loops & circuit breaker bypass, added Gemini first-turn user primer resolving autonomous agent 400 turn errors, and supported /accounts/switch targetIde to avoid unwanted IDE restarts.
+> Latest version **v4.8.3** (2026-09-27): Re-reversed the 9.25-night Antigravity upstream payload restructuring (functionResponse moved to model turns; any-turn first non-thinking part may carry a signature), fixed the signature swing algorithm by decoupling capture/backfill from tool_id, and eliminated thinking-chain break dead loops; stopped injecting a fabricated user turn on trailing tool turns, stopping agent tool loops; removed contradictory toolConfig duplicate writes and system-prompt/tool-description injections for a field-for-field official envelope; routed Layer-3 summaries through the auxiliary client with proxy hot-reload and aligned quota/project endpoints to official Daily->Sandbox->Prod; added configurable account pool priority and official reset_time weekly stats, dual-channel in-app updates, vendor identity normalization, and 100% verbatim tool passthrough.
 
 👉 **[View Full Changelog → CHANGELOG_EN.md](CHANGELOG_EN.md)**
 
-## 👥 Contributors
+<details>
+<summary><b>👥 Contributors - Click to expand</b></summary>
 
 <a href="https://github.com/lbjlaq"><img src="https://github.com/lbjlaq.png" width="50px" style="border-radius: 50%;" alt="lbjlaq"/></a>
 <a href="https://github.com/XinXin622"><img src="https://github.com/XinXin622.png" width="50px" style="border-radius: 50%;" alt="XinXin622"/></a>
@@ -474,7 +486,10 @@ In clients that support OpenAI protocol (e.g., Cherry Studio), you can configure
 
 Special thanks to all developers who have contributed to this project.
 
-## 🤝 Special Thanks
+</details>
+
+<details>
+<summary><b>🤝 Special Thanks - Click to expand</b></summary>
 
 This project has referenced or learned from the ideas or code of the following excellent open-source projects during its development (in no particular order):
 
@@ -486,6 +501,8 @@ This project has referenced or learned from the ideas or code of the following e
 *   [aistudio-gemini-proxy](https://github.com/zhongruichen/aistudio-gemini-proxy)
 *   [gcli2api](https://github.com/su-kaka/gcli2api)
 *   [agent-vibes](https://github.com/funny-vibes/agent-vibes)
+
+</details>
 
 *   **License**: **CC BY-NC-SA 4.0**. Strictly for non-commercial use.
 *   **Security**: All account data is encrypted and stored locally in a SQLite database. Data never leaves your device unless sync is enabled.
