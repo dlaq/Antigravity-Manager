@@ -27,6 +27,9 @@ RUN if [ "$USE_MIRROR" = "true" ] || ( [ "$USE_MIRROR" = "auto" ] && ! timeout 3
     fi
 
 COPY --from=source /src/package*.json ./
+RUN if [ -f package-lock.json ]; then \
+    sed -i 's#https://registry.npmmirror.com/#https://registry.npmjs.org/#g' package-lock.json; \
+    fi
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --legacy-peer-deps --prefer-offline --no-audit --no-fund
 COPY --from=source /src/tsconfig.json /src/tsconfig.node.json /src/vite.config.ts /src/tailwind.config.js /src/postcss.config.cjs /src/index.html ./
