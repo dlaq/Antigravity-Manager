@@ -1,7 +1,7 @@
 # 构建二改版 Antigravity Manager Docker 镜像
 # 用法:
 #   .\docker\build.ps1
-#   .\docker\build.ps1 -Tag "antigravity-manager:4.6.9-fix"
+#   .\docker\build.ps1 -Tag "antigravity-manager:4.9.4-fix"
 #   .\docker\build.ps1 -UseMirror   # 国内加速
 #   .\docker\build.ps1 -Push -Registry "yourname/antigravity-manager"
 
