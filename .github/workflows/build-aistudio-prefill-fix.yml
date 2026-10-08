@@ -4,7 +4,7 @@ name: Docker - AIStudioToAPI Prefill Fix
 
 on:
   push:
-    branches: [main]
+    branches: [upgrade/manager-v4.9.6-prefill-fix]
     paths:
       - ".github/workflows/build-aistudio-prefill-fix.yml"
   workflow_dispatch:
@@ -33,14 +33,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlaq/AIStudioToAPI
-          ref: main
+          ref: upgrade/aistudio-v1.4.0-prefill-fix
           path: patch-source
 
       - name: Checkout latest upstream AIStudioToAPI
         uses: actions/checkout@v4
         with:
           repository: iBUHub/AIStudioToAPI
-          ref: 7c356e053d39992e4e9e4eda24a940d4d44477e8
+          ref: 0c5b6d379c4ef066b3bad01a5b4fee41626cb545
           path: app
 
       - name: Copy compatibility patch
@@ -53,7 +53,10 @@ jobs:
           set -euo pipefail
           git apply --check assistant-prefill-compat.patch
           git apply assistant-prefill-compat.patch
-          node --check src/core/FormatConverter.js
+          node --check src/core/FormatConverter/ChatCompletionsConverter.js
+          node --check src/core/FormatConverter/ClaudeRequestConverter.js
+          grep -Fq 'Rewriting terminal OpenAI assistant prefill' src/core/FormatConverter/ChatCompletionsConverter.js
+          grep -Fq 'Rewriting terminal Anthropic assistant prefill' src/core/FormatConverter/ClaudeRequestConverter.js
           npm install --no-save --ignore-scripts --no-audit --no-fund axios@^1.13.2 mime-types@^3.0.2
           node <<'NODE'
           const assert = require('assert');
@@ -128,8 +131,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ steps.docker.outputs.image }}:main-7c356e0-assistant-prefill-fix
-            ${{ steps.docker.outputs.image }}:assistant-prefill-fix
+            ${{ steps.docker.outputs.image }}:v1.4.0-assistant-prefill-fix-test
+            ${{ steps.docker.outputs.image }}:assistant-prefill-fix-v1.4.0-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
@@ -140,9 +143,9 @@ jobs:
             echo "## AIStudioToAPI patched Docker Hub image"
             echo
             echo '```text'
-            echo "${{ steps.docker.outputs.image }}:main-7c356e0-assistant-prefill-fix"
+            echo "${{ steps.docker.outputs.image }}:v1.4.0-assistant-prefill-fix-test"
             echo '```'
             echo
             echo "Platforms: linux/amd64, linux/arm64"
-            echo "Upstream source: iBUHub/AIStudioToAPI@7c356e053d39992e4e9e4eda24a940d4d44477e8"
+            echo "Upstream source: iBUHub/AIStudioToAPI@0c5b6d379c4ef066b3bad01a5b4fee41626cb545"
           } >> "$GITHUB_STEP_SUMMARY"
