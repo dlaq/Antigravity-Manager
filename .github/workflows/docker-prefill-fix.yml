@@ -1,3 +1,4 @@
+# Dedicated beta image validation; this branch never publishes the production tag.
 name: Docker - Assistant Prefill Fix
 
 on:
