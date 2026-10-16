@@ -143,6 +143,8 @@ pub struct ProxyToken {
     /// 用于自适应路由判断：只要模型出现在此集合中，该账号即可承接对应请求。
     /// 无需任何硬编码字典；未来新模型自动覆盖，无需修改代码。
     pub available_models: std::collections::HashSet<String>,
+    /// [NEW #3677] 模型元数据缓存 (display_name, supports_images, supports_thinking 等)
+    pub model_metadata: HashMap<String, crate::models::quota::ModelListingMeta>,
 }
 
 /// 活跃在途请求 RAII Guard：在请求处理或流式传输期间持有，Drop 时原子释放并发计数
@@ -737,6 +739,46 @@ impl TokenManager {
         let entries =
             std::fs::read_dir(&accounts_dir).map_err(|e| format!("读取账号目录失败: {}", e))?;
 
+        // 读取 accounts.json 索引，过滤掉用户在索引中标记为 disabled 或 proxy_disabled 的账号，防止实体文件残留导致已停用账号渗入代理池
+        let index_file = self.resolved_data_dir().join("accounts.json");
+        let disabled_in_index: std::collections::HashSet<String> = if index_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&index_file) {
+                if let Ok(index_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    index_val
+                        .get("accounts")
+                        .and_then(|a| a.as_array())
+                        .map(|accs| {
+                            accs.iter()
+                                .filter_map(|acc| {
+                                    let is_disabled = acc
+                                        .get("disabled")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(false);
+                                    let is_proxy_disabled = acc
+                                        .get("proxy_disabled")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(false);
+                                    if is_disabled || is_proxy_disabled {
+                                        acc.get("id")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    std::collections::HashSet::new()
+                }
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            std::collections::HashSet::new()
+        };
+
         let mut count = 0;
 
         for entry in entries {
@@ -748,6 +790,45 @@ impl TokenManager {
 
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
+            }
+
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            if disabled_in_index.contains(stem) {
+                // 实体文件是账号状态的真实权威来源。先检查实体文件，若实体文件本身未停用（索引数据陈旧），以实体文件为准；
+                // 仅当实体文件确实标记为停用或不可读时才跳过。
+                let is_truly_disabled = if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(acc_json) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let is_disabled = acc_json
+                            .get("disabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let is_proxy_disabled = acc_json
+                            .get("proxy_disabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        is_disabled || is_proxy_disabled
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                };
+
+                if is_truly_disabled {
+                    tracing::info!(
+                        "[Proxy] Account {} is confirmed disabled/proxy_disabled in both index and entity, skipping from proxy pool",
+                        stem
+                    );
+                    continue;
+                } else {
+                    tracing::warn!(
+                        "[Proxy] Account {} was marked disabled in index but is enabled in entity file; trusting entity file",
+                        stem
+                    );
+                }
             }
 
             // 尝试加载账号
@@ -777,7 +858,43 @@ impl TokenManager {
             .join("accounts")
             .join(format!("{}.json", account_id));
         if !path.exists() {
+            self.remove_account(account_id);
             return Err(format!("账号文件不存在: {:?}", path));
+        }
+
+        // 实体文件是账号状态的真实权威来源。
+        // 若 accounts.json 索引标记了停用，且实体文件也确实停用，则快速从内存池移除；
+        // 若实体文件未停用（索引发生漂移），则以实体文件为准继续加载。
+        let index_file = self.resolved_data_dir().join("accounts.json");
+        if index_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&index_file) {
+                if let Ok(index_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    let is_disabled = index_val
+                        .get("accounts")
+                        .and_then(|a| a.as_array())
+                        .map(|accs| {
+                            accs.iter().any(|acc| {
+                                acc.get("id").and_then(|v| v.as_str()) == Some(account_id)
+                                    && (acc
+                                        .get("disabled")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(false)
+                                        || acc
+                                            .get("proxy_disabled")
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(false))
+                            })
+                        })
+                        .unwrap_or(false);
+                    if is_disabled
+                        && Self::get_account_state_on_disk(&path).await
+                            == OnDiskAccountState::Disabled
+                    {
+                        self.remove_account(account_id);
+                        return Ok(());
+                    }
+                }
+            }
         }
 
         match self.load_single_account(&path).await {
@@ -1137,6 +1254,8 @@ impl TokenManager {
         let mut model_limits: HashMap<String, u64> = HashMap::new();
         // [NEW] 构建账号授权模型集合（原始 ID，直接镜像 fetchAvailableModels 下发，用于自适应路由）
         let mut available_models = std::collections::HashSet::new();
+        // [NEW #3677] 构建模型能力与元数据内存缓存
+        let mut model_metadata = HashMap::new();
         if let Some(models) = account
             .get("quota")
             .and_then(|q| q.get("models"))
@@ -1161,6 +1280,18 @@ impl TokenManager {
                     model.get("max_output_tokens").and_then(|v| v.as_u64()),
                 ) {
                     model_limits.insert(name.to_string(), limit);
+                }
+                // [NEW #3677] 提取模型元数据并缓存 (按原始 model name 小写存储)
+                if let Some(name) = model.get("name").and_then(|v| v.as_str()) {
+                    let normalized = name.trim().to_lowercase();
+                    if !normalized.is_empty() {
+                        let meta =
+                            serde_json::from_value::<crate::models::quota::ModelListingMeta>(
+                                model.clone(),
+                            )
+                            .unwrap_or_default();
+                        model_metadata.insert(normalized, meta);
+                    }
                 }
             }
         }
@@ -1254,6 +1385,7 @@ impl TokenManager {
             model_quotas,
             model_limits,
             available_models,
+            model_metadata,
         }))
     }
 
@@ -4770,9 +4902,18 @@ impl TokenManager {
                     .get("display_name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let is_claude_group = group_name.to_lowercase().contains("claude")
-                    || group_name.to_lowercase().contains("gpt");
-                let is_gemini_group = group_name.to_lowercase().contains("gemini");
+                let group_name_lower = group_name.to_lowercase();
+                let is_argon_group = group_name_lower.contains("argon");
+                let is_claude_group = !is_argon_group
+                    && (group_name_lower.contains("claude")
+                        || group_name_lower.contains("gpt")
+                        || group_name_lower.contains("3p"));
+                let is_gemini_group = !is_argon_group
+                    && !is_claude_group
+                    && (group_name_lower.contains("gemini")
+                        || (!group_name_lower.contains("claude")
+                            && !group_name_lower.contains("gpt")
+                            && !group_name_lower.contains("3p")));
 
                 if let Some(buckets) = group.get("buckets").and_then(|b| b.as_array()) {
                     for bucket in buckets {
@@ -4806,9 +4947,22 @@ impl TokenManager {
                         } else {
                             None
                         };
-                        let third_party = is_claude_group || bucket_id.contains("3p");
-                        let gemini = is_gemini_group || bucket_id.contains("gemini");
-                        let mut models: Vec<&str> = if third_party {
+                        let bucket_id_lower = bucket_id.to_lowercase();
+                        let is_argon_bucket = is_argon_group || bucket_id_lower.contains("argon");
+                        let third_party =
+                            !is_argon_bucket && (is_claude_group || bucket_id_lower.contains("3p"));
+                        let gemini = !is_argon_bucket
+                            && !third_party
+                            && (is_gemini_group || bucket_id_lower.contains("gemini"));
+
+                        let mut models: Vec<&str> = if is_argon_bucket {
+                            vec![
+                                "gemini-4-argon",
+                                "gemini-4-argon-high",
+                                "gemini-4-argon-medium",
+                                "gemini-4-argon-low",
+                            ]
+                        } else if third_party {
                             vec!["claude", "claude-sonnet-4-6", "gpt-oss-120b-medium"]
                         } else if gemini {
                             vec![
@@ -4826,10 +4980,17 @@ impl TokenManager {
                                     .iter()
                                     .filter_map(|m| m.get("name")?.as_str())
                                     .filter(|name| {
-                                        if third_party {
-                                            name.starts_with("claude") || name.starts_with("gpt")
+                                        let n_lower = name.to_lowercase();
+                                        if is_argon_bucket {
+                                            n_lower.contains("argon")
+                                        } else if third_party {
+                                            !n_lower.contains("argon")
+                                                && (name.starts_with("claude")
+                                                    || name.starts_with("gpt"))
                                         } else {
-                                            gemini && name.starts_with("gemini")
+                                            gemini
+                                                && name.starts_with("gemini")
+                                                && !n_lower.contains("argon")
                                         }
                                     }),
                             );
@@ -4915,6 +5076,23 @@ impl TokenManager {
             }
         }
         all_models
+    }
+
+    /// [NEW #3677] 获取当前所有可用账号中收集到的官方动态模型能力与元数据集合
+    pub fn get_all_model_metadata(
+        &self,
+    ) -> std::collections::HashMap<String, crate::models::quota::ModelListingMeta> {
+        let mut all_meta = std::collections::HashMap::new();
+        for entry in self.tokens.iter() {
+            let token = entry.value();
+            for (name, meta) in &token.model_metadata {
+                all_meta
+                    .entry(name.clone())
+                    .or_insert_with(crate::models::quota::ModelListingMeta::default)
+                    .merge_from(meta);
+            }
+        }
+        all_meta
     }
 
     /// [NEW] 从指定账号的动态额度数据中获取特定模型的 max_output_tokens
@@ -6010,6 +6188,7 @@ mod tests {
             model_quotas: HashMap::new(),
             model_limits: HashMap::new(),
             available_models: std::collections::HashSet::new(),
+            model_metadata: HashMap::new(),
         }
     }
 
@@ -6403,6 +6582,7 @@ mod tests {
             model_quotas: HashMap::new(),
             model_limits: HashMap::new(),
             available_models: std::collections::HashSet::new(),
+            model_metadata: HashMap::new(),
         }
     }
 
@@ -7036,6 +7216,7 @@ mod tests {
             model_quotas: quotas1,
             model_limits: limits1,
             available_models: HashSet::new(),
+            model_metadata: HashMap::new(),
         };
 
         // 账号 2: PRO 订阅，经定时刷新成功上报 Claude 5.5 模型配额
@@ -7069,6 +7250,7 @@ mod tests {
                 s.insert("claude-sonnet-5-5-high".to_string());
                 s
             },
+            model_metadata: HashMap::new(),
         };
 
         // 验证辅助函数检测
@@ -7164,6 +7346,7 @@ mod tests {
             model_quotas: quotas,
             model_limits: limits,
             available_models: HashSet::new(),
+            model_metadata: HashMap::new(),
         };
 
         std::fs::write(
@@ -7235,6 +7418,7 @@ mod tests {
             model_quotas: HashMap::new(),
             model_limits: HashMap::new(),
             available_models: std::collections::HashSet::new(),
+            model_metadata: HashMap::new(),
         };
 
         manager.tokens.insert(token.account_id.clone(), token);
@@ -8013,5 +8197,79 @@ mod tests {
             "濒危低配额(<=10%)账号即便临期也绝不得抢占健康高配额账号"
         );
         assert_eq!(email, "healthy_distant@test.com");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_model_metadata_collection_and_bare_derivation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = TokenManager::new(temp_dir.path().to_path_buf());
+
+        let mut meta = HashMap::new();
+        meta.insert(
+            "gemini-3.7-flash-high".to_string(),
+            crate::models::quota::ModelListingMeta {
+                display_name: Some("Gemini 3.7 Flash (High)".to_string()),
+                supports_images: Some(true),
+                supports_thinking: Some(true),
+                thinking_budget: Some(2048),
+                recommended: Some(true),
+                max_tokens: Some(1048576),
+                max_output_tokens: Some(65536),
+                supported_mime_types: None,
+            },
+        );
+
+        let token = ProxyToken {
+            account_id: "acc_test_meta".to_string(),
+            priority: 0,
+            access_token: "token1".to_string(),
+            refresh_token: "refresh1".to_string(),
+            expires_in: 3600,
+            timestamp: chrono::Utc::now().timestamp() + 3600,
+            email: "meta@example.com".to_string(),
+            account_path: temp_dir.path().join("acc.json"),
+            project_id: None,
+            subscription_tier: Some("PRO".to_string()),
+            remaining_quota: Some(100),
+            protected_models: HashSet::new(),
+            health_score: 1.0,
+            reset_time: None,
+            weekly_reset_time: None,
+            validation_blocked: false,
+            validation_blocked_until: 0,
+            validation_url: None,
+            model_quotas: HashMap::new(),
+            model_limits: HashMap::new(),
+            available_models: HashSet::new(),
+            model_metadata: meta,
+        };
+
+        manager.tokens.insert(token.account_id.clone(), token);
+
+        // 1. 测试 TokenManager 聚合
+        let collected = manager.get_all_model_metadata();
+        assert!(collected.contains_key("gemini-3.7-flash-high"));
+        assert_eq!(
+            collected["gemini-3.7-flash-high"].supports_images,
+            Some(true)
+        );
+
+        // 2. 测试 model_mapping 派生裸模型元数据继承
+        let custom = tokio::sync::RwLock::new(HashMap::new());
+        let all_meta = crate::proxy::common::model_mapping::get_all_dynamic_models_metadata(
+            &custom,
+            Some(&manager),
+            true,
+        )
+        .await;
+
+        let bare = all_meta
+            .get("gemini-3.7-flash")
+            .expect("gemini-3.7-flash 裸模型必须自动派生并存在于元数据表中");
+        assert_eq!(bare.display_name.as_deref(), Some("Gemini 3.7 Flash"));
+        assert_eq!(bare.supports_images, Some(true));
+        assert_eq!(bare.supports_thinking, Some(true));
+        assert_eq!(bare.thinking_budget, Some(2048));
+        assert_eq!(bare.max_output_tokens, Some(65536));
     }
 }

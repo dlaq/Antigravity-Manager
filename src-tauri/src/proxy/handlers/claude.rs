@@ -484,7 +484,7 @@ fn extract_thinking_hint(body: &Value) -> ThinkingHint {
         hint.budget_tokens = Some(budget as u32);
     }
 
-    // Try to extract level from thinkingLevel / reasoning_effort / output_config.effort / thinking.effort
+    // Try to extract level from thinkingLevel / reasoning_effort / output_config.effort / thinking.effort / effort
     if let Some(level) = body
         .get("thinkingLevel")
         .or_else(|| body.get("thinking_level"))
@@ -492,6 +492,7 @@ fn extract_thinking_hint(body: &Value) -> ThinkingHint {
         .or_else(|| body.get("reasoningEffort"))
         .or_else(|| body.get("output_config").and_then(|o| o.get("effort")))
         .or_else(|| body.get("thinking").and_then(|t| t.get("effort")))
+        .or_else(|| body.get("effort"))
         .and_then(|l| l.as_str())
     {
         hint.level = Some(level.to_lowercase());
@@ -1949,14 +1950,27 @@ pub async fn handle_messages(
         // [FIX #765/1522] Prepare Robust Beta Headers for Claude models
         let mut extra_headers = std::collections::HashMap::new();
         extra_headers.insert("x-session-id".to_string(), client_session_id.clone());
+
+        // 统一合并客户端传入的 anthropic-beta 与官方必需的 beta 声明，确保 1M 上下文、thinking、effort 等新特性透传至上游
+        let mut beta_set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        if let Some(client_beta) = headers.get("anthropic-beta").and_then(|v| v.to_str().ok()) {
+            for item in client_beta.split(',') {
+                let trimmed = item.trim();
+                if !trimmed.is_empty() {
+                    beta_set.insert(trimmed.to_string());
+                }
+            }
+        }
         if mapped_model.to_lowercase().contains("claude") {
-            extra_headers.insert(
-                "anthropic-beta".to_string(),
-                "claude-code-20250219".to_string(),
-            );
+            beta_set.insert("claude-code-20250219".to_string());
+        }
+        if !beta_set.is_empty() {
+            let combined_beta = beta_set.into_iter().collect::<Vec<_>>().join(",");
+            extra_headers.insert("anthropic-beta".to_string(), combined_beta);
             tracing::debug!(
-                "[{}] Added Comprehensive Beta Headers for Claude model",
-                trace_id
+                "[{}] Added Comprehensive Beta Headers for Claude model: {:?}",
+                trace_id,
+                extra_headers.get("anthropic-beta")
             );
         }
 
@@ -2838,21 +2852,42 @@ pub async fn handle_messages(
 
 /// 列出可用模型
 pub async fn handle_list_models(State(state): State<AppState>) -> impl IntoResponse {
-    use crate::proxy::common::model_mapping::get_all_dynamic_models;
+    use crate::proxy::common::model_mapping::{
+        get_all_dynamic_models, get_all_dynamic_models_metadata,
+    };
 
     let only_raw = *state.only_raw_quota_models.read().await;
     let model_ids =
         get_all_dynamic_models(&state.custom_mapping, Some(&state.token_manager), only_raw).await;
+    let metadata_map = get_all_dynamic_models_metadata(
+        &state.custom_mapping,
+        Some(&state.token_manager),
+        only_raw,
+    )
+    .await;
 
     let data: Vec<_> = model_ids
         .into_iter()
         .map(|id| {
-            json!({
+            let mut obj = json!({
                 "id": id,
                 "object": "model",
                 "created": 1706745600,
                 "owned_by": "antigravity"
-            })
+            });
+            let meta = metadata_map
+                .get(&id)
+                .or_else(|| metadata_map.get(&id.to_lowercase()));
+            if let Some(m) = meta {
+                if let Ok(serde_json::Value::Object(map)) = serde_json::to_value(m) {
+                    if let Some(target) = obj.as_object_mut() {
+                        for (k, v) in map {
+                            target.insert(k, v);
+                        }
+                    }
+                }
+            }
+            obj
         })
         .collect();
 
@@ -2868,7 +2903,9 @@ pub async fn handle_retrieve_model(
     State(state): State<AppState>,
     axum::extract::Path(model): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    use crate::proxy::common::model_mapping::find_dynamic_model;
+    use crate::proxy::common::model_mapping::{
+        find_dynamic_model, get_all_dynamic_models_metadata,
+    };
 
     let only_raw = *state.only_raw_quota_models.read().await;
     if let Some(matched_id) = find_dynamic_model(
@@ -2879,16 +2916,40 @@ pub async fn handle_retrieve_model(
     )
     .await
     {
-        (
-            StatusCode::OK,
-            Json(json!({
-                "type": "model",
-                "id": matched_id.clone(),
-                "display_name": matched_id,
-                "created_at": "2024-10-22T00:00:00Z"
-            })),
+        let metadata_map = get_all_dynamic_models_metadata(
+            &state.custom_mapping,
+            Some(&state.token_manager),
+            only_raw,
         )
-            .into_response()
+        .await;
+
+        let meta = metadata_map
+            .get(&matched_id)
+            .or_else(|| metadata_map.get(&matched_id.to_lowercase()));
+        let display_name = meta
+            .and_then(|m| m.display_name.clone())
+            .unwrap_or_else(|| matched_id.clone());
+
+        let mut obj = json!({
+            "type": "model",
+            "id": matched_id.clone(),
+            "display_name": display_name,
+            "created_at": "2024-10-22T00:00:00Z"
+        });
+
+        if let Some(m) = meta {
+            if let Ok(serde_json::Value::Object(map)) = serde_json::to_value(m) {
+                if let Some(target) = obj.as_object_mut() {
+                    for (k, v) in map {
+                        if k != "display_name" {
+                            target.insert(k, v);
+                        }
+                    }
+                }
+            }
+        }
+
+        (StatusCode::OK, Json(obj)).into_response()
     } else {
         (
             StatusCode::NOT_FOUND,
