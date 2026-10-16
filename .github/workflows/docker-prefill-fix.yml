@@ -3,7 +3,7 @@ name: Docker - Assistant Prefill Fix
 
 on:
   push:
-    branches: [upgrade/manager-v4.9.8-beta.5-prefill-fix]
+    branches: [upgrade/manager-v4.9.8-beta.6-prefill-fix]
     paths:
       - "patches/chat-completions-assistant-prefill.patch"
       - "patches/gemini-penalty-compat.patch"
@@ -111,8 +111,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ steps.docker.outputs.image }}:v4.9.8-beta.5-assistant-prefill-fix-test
-            ${{ steps.docker.outputs.image }}:assistant-prefill-fix-v4.9.8-beta.5-test
+            ${{ steps.docker.outputs.image }}:v4.9.8-beta.6-assistant-prefill-fix-test
+            ${{ steps.docker.outputs.image }}:assistant-prefill-fix-v4.9.8-beta.6-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
@@ -124,10 +124,10 @@ jobs:
             echo "## Patched multi-arch Docker image"
             echo
             echo '```text'
-            echo "${{ steps.docker.outputs.image }}:v4.9.8-beta.5-assistant-prefill-fix-test"
+            echo "${{ steps.docker.outputs.image }}:v4.9.8-beta.6-assistant-prefill-fix-test"
             echo '```'
             echo
             echo "Platforms: linux/amd64, linux/arm64"
-            echo "Upstream base: Antigravity Manager v4.9.8-beta.5"
+            echo "Upstream base: Antigravity Manager v4.9.8-beta.6"
             echo "Compatibility patches: Assistant Prefill + Gemini penalty filtering."
           } >> "$GITHUB_STEP_SUMMARY"
