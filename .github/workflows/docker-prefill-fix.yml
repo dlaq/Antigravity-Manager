@@ -1,4 +1,5 @@
 # Dedicated beta image validation; this branch never publishes the production tag.
+# Triggered after the repository Actions suspension was cleared.
 name: Docker - Assistant Prefill Fix
 
 on:
