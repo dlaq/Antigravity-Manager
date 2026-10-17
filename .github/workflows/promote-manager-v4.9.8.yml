@@ -70,12 +70,32 @@ jobs:
           observed="$(docker buildx imagetools inspect "$IMAGE:$source_tag" | awk '/^Digest:/ { print $2; exit }')"
           test "$observed" = "$SOURCE_DIGEST"
 
-          docker buildx imagetools create \
-            --tag "$IMAGE:v4.9.8-beta.10-assistant-prefill-fix" \
-            "$IMAGE@$SOURCE_DIGEST"
-          docker buildx imagetools create \
-            --tag "$IMAGE:assistant-prefill-fix-v4.9.8-beta.10" \
-            "$IMAGE@$SOURCE_DIGEST"
+          create_manifest() {
+            local target="$1"
+            local last_output=""
+            local rc=255
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              set +e
+              last_output="$(docker buildx imagetools create \
+                --tag "$IMAGE:$target" \
+                "$IMAGE@$SOURCE_DIGEST" 2>&1)"
+              rc=$?
+              set -e
+              if [ "$rc" -eq 0 ]; then
+                return 0
+              fi
+              safe_output="$(printf '%s' "$last_output" | tr '\n' ' ' | sed -E 's/(password|token|secret)[=:][^ ]+/\1=[REDACTED]/Ig' | cut -c1-600)"
+              echo "manifest promotion attempt $attempt failed (rc=$rc): $safe_output" >&2
+              sleep $((attempt * 5))
+            done
+            safe_output="$(printf '%s' "$last_output" | tr '\n' ' ' | sed -E 's/(password|token|secret)[=:][^ ]+/\1=[REDACTED]/Ig' | cut -c1-600)"
+            echo "::error::manifest promotion failed after 5 attempts (rc=$rc): $safe_output"
+            return "$rc"
+          }
+
+          create_manifest "v4.9.8-beta.10-assistant-prefill-fix"
+          create_manifest "assistant-prefill-fix-v4.9.8-beta.10"
 
       - name: Verify promoted manifests
         shell: bash
