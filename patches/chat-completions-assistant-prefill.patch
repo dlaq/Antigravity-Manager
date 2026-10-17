@@ -1,10 +1,10 @@
 diff --git a/src-tauri/src/proxy/handlers/openai.rs b/src-tauri/src/proxy/handlers/openai.rs
 --- a/src-tauri/src/proxy/handlers/openai.rs
 +++ b/src-tauri/src/proxy/handlers/openai.rs
-@@ -1690,6 +1690,21 @@ pub async fn handle_chat_completions(
-         if let Some(obj) = body.as_object_mut() {
-             obj.remove("instructions");
-         }
+@@ -1863,6 +1863,21 @@ pub async fn handle_chat_completions(
+     if is_responses_format {
+         debug!("Detected Responses API format, converting with structured role preservation");
+         body = convert_codex_to_openai_request(body);
      }
 
 +    // Gemini rejects requests whose final content turn has role=model. SillyTavern

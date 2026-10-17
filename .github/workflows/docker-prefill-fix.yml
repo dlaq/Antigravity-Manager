@@ -1,10 +1,10 @@
-# Dedicated beta image validation; this branch never publishes the production tag.
+# Dedicated beta image validation; this branch publishes only versioned test tags.
 # Triggered after the repository Actions suspension was cleared.
 name: Docker - Assistant Prefill Fix
 
 on:
   push:
-    branches: [upgrade/manager-v4.9.8-beta.6-prefill-fix]
+    branches: [upgrade/manager-v4.9.8-beta.10-prefill-fix]
     paths:
       - "patches/chat-completions-assistant-prefill.patch"
       - "patches/gemini-penalty-compat.patch"
@@ -112,8 +112,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ steps.docker.outputs.image }}:v4.9.8-beta.6-assistant-prefill-fix-test
-            ${{ steps.docker.outputs.image }}:assistant-prefill-fix-v4.9.8-beta.6-test
+            ${{ steps.docker.outputs.image }}:v4.9.8-beta.10-assistant-prefill-fix-test
+            ${{ steps.docker.outputs.image }}:assistant-prefill-fix-v4.9.8-beta.10-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
@@ -129,6 +129,6 @@ jobs:
             echo '```'
             echo
             echo "Platforms: linux/amd64, linux/arm64"
-            echo "Upstream base: Antigravity Manager v4.9.8-beta.6"
+            echo "Upstream base: Antigravity Manager v4.9.8-beta.10"
             echo "Compatibility patches: Assistant Prefill + Gemini penalty filtering."
           } >> "$GITHUB_STEP_SUMMARY"
