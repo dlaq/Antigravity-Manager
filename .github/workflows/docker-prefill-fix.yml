@@ -125,7 +125,7 @@ jobs:
             echo "## Patched multi-arch Docker image"
             echo
             echo '```text'
-            echo "${{ steps.docker.outputs.image }}:v4.9.8-beta.6-assistant-prefill-fix-test"
+            echo "${{ steps.docker.outputs.image }}:v4.9.8-beta.10-assistant-prefill-fix-test"
             echo '```'
             echo
             echo "Platforms: linux/amd64, linux/arm64"
