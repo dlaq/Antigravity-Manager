@@ -55,6 +55,9 @@ jobs:
           printf '%s' "$token" | docker login --username "$username" --password-stdin
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Promote verified beta.10 manifest
         shell: bash
         env:
