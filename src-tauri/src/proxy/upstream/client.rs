@@ -108,8 +108,7 @@ pub fn sanitize_error_for_log(error_text: &str) -> String {
 // Cloud Code v1internal endpoints (fallback order: Daily → Sandbox → Prod)
 //
 // Daily 优先 —— 它是官方 IDE 原生唯一主力端点（`language_server` 的启动参数即指向它），
-// 稳定支持思维链与工具调用；Sandbox 为沙箱备用、Prod 为生产兜底，
-// 后两者均易触发 Prod 环境的 429（Ref: Issue #1176, Issue #3523）。
+// 稳定支持思维链与工具调用；Sandbox 为沙箱备用容灾；Prod 端点因全流量必报 429 已被彻底剔除。
 //
 // [FIX Issue #3525 / PR #3526] 顺序同时是**正确性**要求，不只是可用性偏好：
 // 同一账号 / 模型 / 代理下，Sandbox 对部分地区返回**终止性 400**
@@ -117,15 +116,15 @@ pub fn sanitize_error_for_log(error_text: &str) -> String {
 // 只对 408 / 404 / 5xx 回退 → 400 不触发回退，故 Sandbox 排首位会让已验证可用的
 // Daily 永远不被尝试。Sandbox 保留为回退项、回退判定规则不变 ——
 // **不对所有 400 无条件重试**。
+#[allow(dead_code)]
 const V1_INTERNAL_BASE_URL_PROD: &str = "https://cloudcode-pa.googleapis.com/v1internal";
 const V1_INTERNAL_BASE_URL_DAILY: &str = "https://daily-cloudcode-pa.googleapis.com/v1internal";
 const V1_INTERNAL_BASE_URL_SANDBOX: &str =
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal";
 
-pub const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 3] = [
+pub const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 2] = [
     V1_INTERNAL_BASE_URL_DAILY, // 优先级 1: Daily (官方 IDE 原生主力端点，毫秒级响应，稳定支持长流式与思维链)
-    V1_INTERNAL_BASE_URL_SANDBOX, // 优先级 2: Sandbox (沙箱备用，极速响应，遇地域限制秒切)
-    V1_INTERNAL_BASE_URL_PROD,  // 优先级 3: Prod (生产集群，大流式易遇 GFE 假死，作为深层兜底)
+    V1_INTERNAL_BASE_URL_SANDBOX, // 优先级 2: Sandbox (沙箱备用，极速响应，实测完美承载 100k+ 上下文，无缝容灾)
 ];
 
 /// 提取端点的主机名或规范标识，使不同 API 路径（如 :loadCodeAssist、:fetchAvailableModels、v1internal）
@@ -260,7 +259,7 @@ impl EndpointHealthTracker {
 
 impl Default for EndpointHealthTracker {
     fn default() -> Self {
-        Self::new(std::time::Duration::from_secs(300))
+        Self::new(std::time::Duration::from_secs(30))
     }
 }
 
@@ -353,11 +352,11 @@ impl UpstreamClient {
         let builder = Client::builder()
             .emulation(rquest_util::Emulation::Chrome123)
             // Connection settings (优化连接复用，减少建立开销)
-            // [OPTIMIZATION] 建连仅涉及 TCP/TLS 握手，从 20s 缩短至 5s，快速识别死端点，防止多级重试累积 40s 超时
-            .connect_timeout(Duration::from_secs(5))
-            .pool_max_idle_per_host(20) // 每主机最多 20 个空闲连接 (对齐官方指纹)
-            // [FIX] 空闲连接从 90s 缩短至 45s，避免 GFE 在 45~60s 静默掐断空闲 TCP 后客户端复用死连接引发 error reading a body
-            .pool_idle_timeout(Duration::from_secs(45))
+            // [OPTIMIZATION] 建连仅涉及 TCP/TLS 握手，设置为 10s，兼顾跨国网络抖动与快速识别死端点
+            .connect_timeout(Duration::from_secs(10))
+            .pool_max_idle_per_host(10) // 每主机最多 10 个空闲连接 (防止过多闲置连接被上游服务端静默掐断)
+            // [FIX] 空闲连接收紧至 15s，避免 GFE 在 20~30s 静默掐断空闲 TCP 后客户端复用死连接引发 error reading a body from connection
+            .pool_idle_timeout(Duration::from_secs(15))
             // [FIX #3593 / #3571] 彻底恢复 Chrome 123 原生协议行为：
             // 1. 实测证实 Google GFE 对客户端 HTTP/2 PING 帧静默丢弃、不回复 PING ACK，
             //    导致 hyper2 在 keep_alive_timeout 到期时本地自杀式掐死连接并抛出 error reading a body from connection；
@@ -556,11 +555,10 @@ impl UpstreamClient {
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
-        headers.insert(
-            header::AUTHORIZATION,
-            header::HeaderValue::from_str(&format!("Bearer {}", access_token))
-                .map_err(|e| e.to_string())?,
-        );
+        let mut auth_val = header::HeaderValue::from_str(&format!("Bearer {}", access_token))
+            .map_err(|e| e.to_string())?;
+        auth_val.set_sensitive(true);
+        headers.insert(header::AUTHORIZATION, auth_val);
 
         headers.insert(
             header::USER_AGENT,
@@ -678,20 +676,28 @@ impl UpstreamClient {
                 let switch_delay_s = last_attempt_failed_at.map(|t| t.elapsed().as_secs_f64());
                 let attempt_start = std::time::Instant::now();
 
-                // [WATCHDOG] 端点级防假死超时：当还有备用候选端点时，设置 12 秒流式预建联/首包超时，
-                // 防止上游故障端点（如 Prod 大流式请求）无响应静默挂起 56 秒阻塞全链路
+                // [WATCHDOG] 端点级自适应防假死超时：流式接口保底 120s 满足大模型思维链与长上下文冷推理 (TTFT ~35s)，
+                // 普通轻量请求保底 15s 快速探活，兼顾防上游静默挂起与避免长思考被误判假死导致 429 假阳性 (Fixes #3506, Ref #3525)
+                let watchdog_secs = if method == "streamGenerateContent" {
+                    std::cmp::max(120, (body_bytes.len() as u64) / (64 * 1024) + 120)
+                } else {
+                    std::cmp::max(15, (body_bytes.len() as u64) / (256 * 1024) + 15)
+                };
                 let send_future = req_builder.send();
                 let response = if has_next {
-                    match tokio::time::timeout(std::time::Duration::from_secs(12), send_future)
-                        .await
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(watchdog_secs),
+                        send_future,
+                    )
+                    .await
                     {
                         Ok(res) => res,
                         Err(_) => {
                             self.endpoint_health.mark_failure(base_url);
                             last_attempt_failed_at = Some(std::time::Instant::now());
                             let err_msg = format!(
-                                "HTTP request timed out after 12s waiting for response headers at {} (method={})",
-                                base_url, method
+                                "HTTP request timed out after {}s waiting for response headers at {} (method={}, body_len={})",
+                                watchdog_secs, base_url, method, body_bytes.len()
                             );
                             tracing::warn!(%err_msg, "Upstream candidate endpoint timed out, fast falling back to next endpoint");
                             fallback_attempts.push(FallbackAttemptLog {
@@ -1195,11 +1201,7 @@ mod tests {
     fn test_v1_internal_fallbacks_order_prioritizes_daily_over_sandbox() {
         assert_eq!(
             V1_INTERNAL_BASE_URL_FALLBACKS,
-            [
-                V1_INTERNAL_BASE_URL_DAILY,
-                V1_INTERNAL_BASE_URL_SANDBOX,
-                V1_INTERNAL_BASE_URL_PROD,
-            ]
+            [V1_INTERNAL_BASE_URL_DAILY, V1_INTERNAL_BASE_URL_SANDBOX,]
         );
     }
 

@@ -202,7 +202,11 @@
         "health_available_rate": "ကျန်းမာစွာ အသုံးပြုနိုင်မှုနှုန်း",
         "circuit_break": "ဖြတ်တောက်မှု",
         "health_all_green": "အားလုံး ကောင်းမွန်သည်",
-        "abnormal_badge": "{{count}} ပုံမှန်မဟုတ်ပါ"
+        "abnormal_badge": "{{count}} ပုံမှန်မဟုတ်ပါ",
+        "no_client_account": "ဤအက်ပ်အတွက် အသုံးပြုနေသော အကောင့်မရှိပါ",
+        "go_switch_account": "အကောင့်ပြောင်းရန် သွားပါ",
+        "switch_best_to_target": "အကောင်းဆုံးအကောင့်ကို {{target}} သို့ ပြောင်းပါ",
+        "switch_this_to_target": "ဤအကောင့်ကို {{target}} သို့ ပြောင်းပါ"
     },
     "accounts": {
         "account": "အကောင့်",
@@ -484,7 +488,18 @@
             "refresh_interval": "Selang Muat Semula (minit)",
             "auto_sync": "Segerak Automatik Akaun Semasa",
             "auto_sync_desc": "Segerakkan maklumat akaun aktif semasa secara berkala secara automatik",
-            "sync_interval": "Selang Segerak (saat)"
+            "sync_interval": "Selang Segerak (saat)",
+            "auto_switch_classic": "Pertukaran Pantas Automatik Classic",
+            "auto_switch_classic_badge": "Untuk Classic Sahaja",
+            "auto_switch_classic_desc": "Apabila semakan berkala mendapati kuota akaun semasa Antigravity Classic jatuh di bawah ambang, tukar secara automatik dan lancar ke akaun terbaik yang tersedia dalam kumpulan (Eksklusif untuk Classic Standalone; IDE dan CLI tidak disokong kerana kekangan seni bina klien).",
+            "auto_switch_threshold_label": "Ambang Pencetus Pertukaran",
+            "auto_switch_threshold_hint": "Cetuskan pertukaran apabila mana-mana kuota yang dipantau ≤ {{pct}}%",
+            "auto_switch_models_label": "Kumpulan Kuota Dipantau",
+            "auto_switch_models_hint": "Pilih sekurang-kurangnya satu. Pertukaran akan dicetuskan jika mana-mana kumpulan jatuh di bawah ambang.",
+            "auto_switch_gemini": "Kumpulan Gemini",
+            "auto_switch_gemini_desc": "Termasuk Pro / Flash / Penjanaan imej",
+            "auto_switch_third_party": "Model Pihak Ketiga",
+            "auto_switch_third_party_desc": "Termasuk Claude 3.7 / 3.5 / GPT"
         },
         "warmup": {
             "title": "Pemanasan Pintar",
@@ -1408,11 +1423,15 @@
             },
             "toast": {
                 "sync_success": "Segerak berjaya! {{name}} sudah sedia.",
-                "sync_error": "Segerak gagal: {{error}}"
+                "sync_error": "Segerak gagal: {{error}}",
+                "sync_success_with_model": "Berjaya menyegerakkan {{name}} dengan model: {{model}}"
             },
             "sync_confirm_title": "Pengesahan Segerak",
             "sync_confirm_message": "Bersedia untuk menyegerakkan konfigurasi {{name}}. ⚠️ Amaran: Ini akan menimpa fail konfigurasi tempatan sedia ada anda (cth. token log masuk, Kunci API). Adakah anda pasti mahu meneruskan?",
-            "model_select": "Select Model"
+            "model_select": "Select Model",
+            "apps": {
+                "gemini": "Antigravity CLI (agy)"
+            }
         },
         "models": {
             "flash": "Ultra-fast",

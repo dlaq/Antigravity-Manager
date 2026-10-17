@@ -727,18 +727,6 @@ impl TokenManager {
             return Err(format!("账号目录不存在: {:?}", accounts_dir));
         }
 
-        // Reload should reflect current on-disk state (accounts can be added/removed/disabled).
-        self.tokens.clear();
-        self.sync_image_scheduler_accounts();
-        self.current_index.store(0, Ordering::SeqCst);
-        {
-            let mut last_used = self.last_used_account.lock().await;
-            *last_used = None;
-        }
-
-        let entries =
-            std::fs::read_dir(&accounts_dir).map_err(|e| format!("读取账号目录失败: {}", e))?;
-
         // 读取 accounts.json 索引，过滤掉用户在索引中标记为 disabled 或 proxy_disabled 的账号，防止实体文件残留导致已停用账号渗入代理池
         let index_file = self.resolved_data_dir().join("accounts.json");
         let disabled_in_index: std::collections::HashSet<String> = if index_file.exists() {
@@ -779,13 +767,14 @@ impl TokenManager {
             std::collections::HashSet::new()
         };
 
-        let mut count = 0;
+        let entries =
+            std::fs::read_dir(&accounts_dir).map_err(|e| format!("读取账号目录失败: {}", e))?;
+
+        // 阶段 1：在局部集合中加载新账号，严禁提前清空现有活跃池导致并发 503 宕机
+        let mut new_tokens = std::collections::HashMap::new();
 
         for entry in entries {
-            let entry = entry.map_err(|e| {
-                self.sync_image_scheduler_accounts();
-                format!("读取目录项失败: {}", e)
-            })?;
+            let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -835,14 +824,33 @@ impl TokenManager {
             match self.load_single_account(&path).await {
                 Ok(Some(token)) => {
                     let account_id = token.account_id.clone();
-                    self.tokens.insert(account_id, token);
-                    count += 1;
+                    new_tokens.insert(account_id, token);
                 }
                 Ok(None) => {
                     // 跳过无效账号
                 }
                 Err(e) => {
                     tracing::warn!("加载账号失败 {:?}: {}", path, e);
+                }
+            }
+        }
+
+        let count = new_tokens.len();
+
+        // 阶段 2：零停机平滑原子同步到 self.tokens
+        // 剔除已在磁盘删除或停用的账号
+        self.tokens.retain(|k, _| new_tokens.contains_key(k));
+        // 更新或插入新载入的有效账号
+        for (k, v) in new_tokens {
+            self.tokens.insert(k, v);
+        }
+
+        // 若上次记录的使用账号已不在池中，则安全清理
+        {
+            let mut last_used = self.last_used_account.lock().await;
+            if let Some((ref acc_id, _)) = *last_used {
+                if !self.tokens.contains_key(acc_id) {
+                    *last_used = None;
                 }
             }
         }
@@ -3186,16 +3194,16 @@ impl TokenManager {
                         })
                         .min();
 
-                    // Layer 1: 如果最短等待时间 <= 2秒,执行缓冲延迟
+                    // Layer 1: 如果最短等待时间 <= 5秒, 执行物理冷却延迟（留出冷却时间，杜绝频繁反复触发）
                     if let Some(wait_sec) = min_wait {
-                        if wait_sec <= 2 {
-                            let wait_ms = (wait_sec as f64 * 1000.0) as u64 + 50;
+                        if wait_sec <= 5 {
+                            let wait_ms = (wait_sec as f64 * 1000.0) as u64 + 100;
                             tracing::warn!(
-                                "All accounts rate-limited but shortest wait is {}s. Applying {}ms buffer for state sync...",
+                                "All accounts rate-limited but shortest wait is {}s. Applying {}ms physical cooldown delay...",
                                 wait_sec, wait_ms
                             );
 
-                            // 缓冲延迟
+                            // 物理冷却延迟
                             tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
 
                             // 重新尝试选择账号
@@ -3219,109 +3227,32 @@ impl TokenManager {
 
                             if let Some(t) = retry_token {
                                 tracing::info!(
-                                    "✅ Buffer delay successful! Found available account: {}",
+                                    "✅ Cooldown delay successful! Found available account: {}",
                                     t.email
                                 );
                                 t.clone()
                             } else {
-                                // Layer 2: 缓冲后仍无可用账号,执行乐观重置
                                 tracing::warn!(
-                                    "Buffer delay failed. Executing optimistic reset for all {} accounts...",
-                                    tokens_snapshot.len()
+                                    "Cooldown delay elapsed ({}s), but accounts still rate-limited. Demanding client cooldown backoff.",
+                                    wait_sec
                                 );
-
-                                // 清除所有限流记录
-                                self.rate_limit_tracker.clear_for_optimistic_reset();
-
-                                // 再次尝试选择账号 (优先选用未限流且对目标模型具备正配额的账号，严禁直接放行 0% 额度账号)
-                                let final_token = tokens_snapshot
-                                    .iter()
-                                    .find(|t| {
-                                        !attempted.contains(&t.account_id)
-                                            && !self.rate_limit_tracker.is_rate_limited(
-                                                &t.account_id,
-                                                Some(&normalized_target),
-                                            )
-                                            && !(quota_protection_enabled
-                                                && t.protected_models.contains(&normalized_target))
-                                            && t.model_quotas
-                                                .get(&normalized_target)
-                                                .copied()
-                                                .unwrap_or(0)
-                                                > 0
-                                    })
-                                    .or_else(|| {
-                                        tokens_snapshot.iter().find(|t| {
-                                            !attempted.contains(&t.account_id)
-                                                && !self.rate_limit_tracker.is_rate_limited(
-                                                    &t.account_id,
-                                                    Some(&normalized_target),
-                                                )
-                                                && !(quota_protection_enabled
-                                                    && t.protected_models
-                                                        .contains(&normalized_target))
-                                        })
-                                    });
-
-                                if let Some(t) = final_token {
-                                    tracing::info!(
-                                        "✅ Optimistic reset successful! Using account: {}",
-                                        t.email
-                                    );
-                                    t.clone()
-                                } else {
-                                    return Err(
-                                        "All accounts failed after optimistic reset.".to_string()
-                                    );
-                                }
+                                return Err(format!(
+                                    "All accounts rate-limited. Cooldown wait {}s.",
+                                    wait_sec
+                                ));
                             }
                         } else {
-                            // [FIX #3506] 当最小等待时间 > 2s 时，不进行阻塞式 sleep 缓冲（避免客户端请求超时）。
-                            // 但若全池仅被瞬态速率限制（RateLimitExceeded）锁定而无周配额耗尽硬伤时，
-                            // 立即执行 Layer 2 乐观重置清除瞬态流控标记，严禁直接返回 503 导致整池雪崩瘫痪。
+                            // 当等待时间 > 5s 时，不进行本地死等，坚决返回冷却等待错误，
+                            // 让上层协议（Claude Code / HTTP 429 Retry-After）主动进行客户端退避，
+                            // 严禁 0ms 乐观重置暴力清空限流标记导致多对话瞬态打穿 Google 上游（Fixes #3506）
                             tracing::warn!(
-                                "All accounts limited with wait {}s > 2s. Attempting optimistic reset for transient rate limits...",
+                                "All accounts rate-limited with wait {}s > 5s. Demanding client cooldown backoff.",
                                 wait_sec
                             );
-                            self.rate_limit_tracker.clear_for_optimistic_reset();
-                            let final_token = tokens_snapshot
-                                .iter()
-                                .find(|t| {
-                                    !attempted.contains(&t.account_id)
-                                        && !self.rate_limit_tracker.is_rate_limited(
-                                            &t.account_id,
-                                            Some(&normalized_target),
-                                        )
-                                        && !(quota_protection_enabled
-                                            && t.protected_models.contains(&normalized_target))
-                                        && t.model_quotas
-                                            .get(&normalized_target)
-                                            .copied()
-                                            .unwrap_or(0)
-                                            > 0
-                                })
-                                .or_else(|| {
-                                    tokens_snapshot.iter().find(|t| {
-                                        !attempted.contains(&t.account_id)
-                                            && !self.rate_limit_tracker.is_rate_limited(
-                                                &t.account_id,
-                                                Some(&normalized_target),
-                                            )
-                                            && !(quota_protection_enabled
-                                                && t.protected_models.contains(&normalized_target))
-                                    })
-                                });
-
-                            if let Some(t) = final_token {
-                                tracing::info!(
-                                    "✅ Optimistic reset successful for wait {}s! Rescued available account: {}",
-                                    wait_sec,
-                                    t.email
-                                );
-                                t.clone()
-                            } else {
-                                return Err(format!("All accounts limited. Wait {}s.", wait_sec));
-                            }
+                            return Err(format!(
+                                "All accounts rate-limited. Cooldown wait {}s.",
+                                wait_sec
+                            ));
                         }
                     } else {
                         return Err("All accounts failed or unhealthy.".to_string());
@@ -5392,6 +5323,44 @@ mod tests {
             .get_token("claude", false, None, "claude-sonnet-4-6")
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_zero_downtime_atomic_account_reload() {
+        let _data_dir = crate::proxy::monitor::prompt_log_tests::TestDataDir::new();
+        let data_dir = crate::modules::account::get_data_dir().unwrap();
+        let accounts = data_dir.join("accounts");
+        std::fs::create_dir_all(&accounts).unwrap();
+
+        let now = chrono::Utc::now().timestamp();
+        let mut acc1 = weekly_quota_account(now);
+        acc1["id"] = serde_json::json!("acc-1");
+        std::fs::write(accounts.join("acc-1.json"), acc1.to_string()).unwrap();
+
+        let manager = TokenManager::new(data_dir.clone());
+        let count = manager.load_accounts().await.unwrap();
+        assert_eq!(count, 1);
+        assert!(manager.tokens.contains_key("acc-1"));
+
+        // 模拟磁盘写入新账号 acc-2
+        let mut acc2 = weekly_quota_account(now);
+        acc2["id"] = serde_json::json!("acc-2");
+        std::fs::write(accounts.join("acc-2.json"), acc2.to_string()).unwrap();
+
+        // 重新加载：平滑同步，包含两账号
+        let count2 = manager.load_accounts().await.unwrap();
+        assert_eq!(count2, 2);
+        assert!(manager.tokens.contains_key("acc-1"));
+        assert!(manager.tokens.contains_key("acc-2"));
+
+        // 模拟磁盘删除 acc-1
+        std::fs::remove_file(accounts.join("acc-1.json")).unwrap();
+
+        // 重新加载：acc-1 被安全剔除，acc-2 保留
+        let count3 = manager.load_accounts().await.unwrap();
+        assert_eq!(count3, 1);
+        assert!(!manager.tokens.contains_key("acc-1"));
+        assert!(manager.tokens.contains_key("acc-2"));
     }
 
     #[tokio::test]

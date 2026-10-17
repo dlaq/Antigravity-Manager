@@ -204,7 +204,11 @@
         "health_available_rate": "Доступность",
         "circuit_break": "Сбой",
         "health_all_green": "Все в норме",
-        "abnormal_badge": "{{count}} сбоев"
+        "abnormal_badge": "{{count}} сбоев",
+        "no_client_account": "Нет активного или привязанного аккаунта для этого приложения",
+        "go_switch_account": "Перейти к смене аккаунта",
+        "switch_best_to_target": "Переключить лучший аккаунт на {{target}}",
+        "switch_this_to_target": "Переключить этот аккаунт на {{target}}"
     },
     "accounts": {
         "account": "Аккаунт",
@@ -486,7 +490,18 @@
             "refresh_interval": "Интервал обновления (минуты)",
             "auto_sync": "Автосинхронизация текущего аккаунта",
             "auto_sync_desc": "Автоматически синхронизировать информацию о текущем активном аккаунте периодически",
-            "sync_interval": "Интервал синхронизации (секунды)"
+            "sync_interval": "Интервал синхронизации (секунды)",
+            "auto_switch_classic": "Авто-хотсвап для Classic",
+            "auto_switch_classic_badge": "Только для Classic",
+            "auto_switch_classic_desc": "При фоновой проверке квот Antigravity Classic, если квота текущего аккаунта падает ниже порога, автоматически и незаметно переключает на лучший доступный аккаунт из пула (Только для Classic Standalone; IDE и CLI не поддерживаются из-за архитектурных ограничений клиентов).",
+            "auto_switch_threshold_label": "Порог переключения",
+            "auto_switch_threshold_hint": "Переключать, если квота любого отслеживаемого пула ≤ {{pct}}%",
+            "auto_switch_models_label": "Отслеживаемые пулы квот",
+            "auto_switch_models_hint": "Выберите хотя бы один пул. Переключение сработает, если квота любого выбранного пула упадет ниже порога.",
+            "auto_switch_gemini": "Пул Gemini",
+            "auto_switch_gemini_desc": "Включает Pro / Flash / генерацию изображений",
+            "auto_switch_third_party": "Сторонние модели",
+            "auto_switch_third_party_desc": "Включает Claude 3.7 / 3.5 / GPT"
         },
         "warmup": {
             "title": "Умный разогрев",
@@ -1427,10 +1442,14 @@
             },
             "toast": {
                 "sync_success": "Успешно! {{name}} готов к работе.",
-                "sync_error": "Ошибка синхронизации: {{error}}"
+                "sync_error": "Ошибка синхронизации: {{error}}",
+                "sync_success_with_model": "Успешно синхронизировано {{name}} с моделью: {{model}}!"
             },
             "sync_confirm_title": "Подтверждение синхронизации",
-            "sync_confirm_message": "Готово к синхронизации конфигурации {{name}}. ⚠️ Внимание: это перезапишет ваши существующие локальные файлы конфигурации (например, токены входа, API ключи). Вы уверены, что хотите продолжить?"
+            "sync_confirm_message": "Готово к синхронизации конфигурации {{name}}. ⚠️ Внимание: это перезапишет ваши существующие локальные файлы конфигурации (например, токены входа, API ключи). Вы уверены, что хотите продолжить?",
+            "apps": {
+                "gemini": "Antigravity CLI (agy)"
+            }
         },
         "hermes_sync": {
             "modal_title": "Настройка Antigravity Manager в Hermes",

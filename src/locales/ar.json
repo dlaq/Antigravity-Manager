@@ -202,7 +202,11 @@
         "health_available_rate": "معدل الجاهزية السليمة",
         "circuit_break": "قاطع الدائرة",
         "health_all_green": "سليم تمامًا",
-        "abnormal_badge": "{{count}} غير طبيعي"
+        "abnormal_badge": "{{count}} غير طبيعي",
+        "no_client_account": "لا يوجد حساب نشط أو مرتبط بهذا التطبيق",
+        "go_switch_account": "الانتقال إلى تبديل الحساب",
+        "switch_best_to_target": "تبديل أفضل حساب إلى {{target}}",
+        "switch_this_to_target": "تبديل هذا الحساب إلى {{target}}"
     },
     "accounts": {
         "account": "الحساب",
@@ -484,7 +488,18 @@
             "refresh_interval": "فاصل التحديث (دقائق)",
             "auto_sync": "مزامنة تلقائية للحساب الحالي",
             "auto_sync_desc": "مزامنة معلومات الحساب النشط الحالي بشكل دوري",
-            "sync_interval": "فاصل المزامنة (ثواني)"
+            "sync_interval": "فاصل المزامنة (ثواني)",
+            "auto_switch_classic": "التبديل التلقائي السريع للنسخة الكلاسيكية",
+            "auto_switch_classic_badge": "للنسخة الكلاسيكية فقط",
+            "auto_switch_classic_desc": "عندما يكشف الفحص الدوري أن حصة الحساب الحالي في Antigravity Classic انخفضت عن الحد الأدنى، يتم التبديل تلقائيًا وبسلاسة إلى أفضل حساب متاح في المجموعة (خاص بالنسخة الكلاسيكية فقط؛ النسخ IDE و CLI غير مدعومة بسبب قيود معمارية العميل).",
+            "auto_switch_threshold_label": "حد بدء التبديل",
+            "auto_switch_threshold_hint": "بدء التبديل عندما تكون أي حصة مراقبة ≤ {{pct}}%",
+            "auto_switch_models_label": "مجموعات الحصص المراقبة",
+            "auto_switch_models_hint": "اختر واحدة على الأقل. سيتم التبديل إذا انخفضت أي مجموعة عن الحد.",
+            "auto_switch_gemini": "مجموعة Gemini",
+            "auto_switch_gemini_desc": "يشمل Pro / Flash / توليد الصور",
+            "auto_switch_third_party": "نماذج الطرف الثالث",
+            "auto_switch_third_party_desc": "يشمل Claude 3.7 / 3.5 / GPT"
         },
         "warmup": {
             "title": "تنشيط ذكي",
@@ -1417,11 +1432,15 @@
             },
             "toast": {
                 "sync_success": "تمت المزامنة بنجاح! {{name}} جاهز.",
-                "sync_error": "فشلت المزامنة: {{error}}"
+                "sync_error": "فشلت المزامنة: {{error}}",
+                "sync_success_with_model": "تمت مزامنة {{name}} بنجاح مع النموذج: {{model}}"
             },
             "sync_confirm_title": "تأكيد المزامنة",
             "sync_confirm_message": "جاهز لمزامنة تكوين {{name}}. ⚠️ تحذير: سيؤدي هذا إلى الكتابة فوق ملفات التكوين المحلية الحالية (مثل توكنات تسجيل الدخول، مفاتيح API). هل أنت متأكد من رغبتك في الاستمرار؟",
-            "model_select": "Select Model"
+            "model_select": "Select Model",
+            "apps": {
+                "gemini": "Antigravity CLI (agy)"
+            }
         },
         "models": {
             "flash": "Ultra-fast",

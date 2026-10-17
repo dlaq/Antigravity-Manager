@@ -543,6 +543,7 @@ fn apply_thinking_hints(
             type_: "enabled".to_string(),
             budget_tokens: Some(budget),
             effort: existing_effort,
+            display: None,
         });
         tracing::debug!(
             "[{}] Applied thinking hint: budget_tokens={}",
@@ -570,6 +571,7 @@ fn apply_thinking_hints(
                 type_: "enabled".to_string(),
                 budget_tokens: Some(budget),
                 effort: None,
+                display: None,
             });
             tracing::debug!(
                 "[{}] Applied thinking hint: level={} -> budget_tokens={}",
@@ -818,6 +820,7 @@ fn apply_variant(
             type_: "enabled".to_string(),
             budget_tokens: Some(spec.effective_thinking_budget(client_budget)),
             effort: None,
+            display: None,
         });
     }
     request.output_config = None;
@@ -982,6 +985,7 @@ pub async fn handle_messages(
                 type_: "disabled".to_string(),
                 budget_tokens: Some(0),
                 effort: None,
+                display: None,
             });
         }
     } else if is_v3_or_above || is_explicit_tier_model {
@@ -991,6 +995,7 @@ pub async fn handle_messages(
             type_: "enabled".to_string(),
             budget_tokens: None,
             effort: effort_in_thinking,
+            display: None,
         });
     } else {
         // 由于此时还没拿到账号，先用模型默认限额兜底
@@ -1030,12 +1035,14 @@ pub async fn handle_messages(
                 type_: "disabled".to_string(),
                 budget_tokens: Some(0),
                 effort: None,
+                display: None,
             });
         } else if is_client_control && raw_client_budget.is_some() {
             request.thinking = Some(crate::proxy::mappers::claude::models::ThinkingConfig {
                 type_: "enabled".to_string(),
                 budget_tokens: raw_client_budget,
                 effort: effort_hint.clone(),
+                display: None,
             });
         } else if is_client_control {
             // [CRITICAL FIX] 客户端控制模式下，客户端未传数字预算（全缺省或仅传等级）
@@ -2165,6 +2172,7 @@ pub async fn handle_messages(
                         .header(header::CONTENT_TYPE, "text/event-stream")
                         .header(header::CACHE_CONTROL, "no-cache")
                         .header(header::CONNECTION, "keep-alive")
+                        .header("request-id", format!("req_{}", trace_id))
                         .header("X-Accel-Buffering", "no")
                         .header("X-Account-Email", &email)
                         .header("X-Mapped-Model", &request_with_mapped.model)
@@ -2192,11 +2200,13 @@ pub async fn handle_messages(
                 let mut retry_this_account = false;
 
                 // Loop to skip heartbeats during peek (for non-streaming requests)
-                // [FIX #3634] 动态自适应计算 Peek 超时时间，并受全局剩余请求预算严格约束，
-                // 彻底杜绝大 Prompt 预热（TTFT > 30s）被误杀，同时杜绝累积超时触发客户端 5 分钟看门狗
-                let base_peek_secs = super::common::calculate_adaptive_peek_timeout(
+                // [FIX #3634, #3693] 动态自适应计算 Peek 超时时间（支持 thinking 宽限），并受全局剩余请求预算严格约束，
+                // 彻底杜绝大 Prompt / 深度思考预热（TTFT > 30s）被误杀，同时杜绝累积超时触发客户端 5 分钟看门狗
+                let is_thinking = request.thinking.is_some() || mapped_model.contains("thinking");
+                let base_peek_secs = super::common::calculate_adaptive_peek_timeout_full(
                     is_compaction_request,
                     false,
+                    is_thinking,
                     Some(raw_estimated),
                 );
                 let current_remaining_secs = global_deadline
@@ -2338,6 +2348,7 @@ pub async fn handle_messages(
                                 return Response::builder()
                                     .status(StatusCode::OK)
                                     .header(header::CONTENT_TYPE, "application/json")
+                                    .header("request-id", format!("req_{}", trace_id))
                                     .header("X-Account-Email", &email)
                                     .header("X-Mapped-Model", &request_with_mapped.model)
                                     .header("X-Upstream-Model", config.final_model.as_str())
@@ -2491,6 +2502,7 @@ pub async fn handle_messages(
                 return Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "application/json")
+                    .header("request-id", format!("req_{}", trace_id))
                     .header("X-Account-Email", &email)
                     .header("X-Mapped-Model", &request_with_mapped.model)
                     .header("X-Upstream-Model", config.final_model.as_str())
@@ -2746,13 +2758,13 @@ pub async fn handle_messages(
                 {
                     tracing::error!("Failed to set validation block: {}", e);
                 }
-            }
-
-            // 设置 is_forbidden 状态
-            if let Err(e) = token_manager.set_forbidden(&account_id, &error_text).await {
-                tracing::error!("Failed to set forbidden status for {}: {}", email, e);
             } else {
-                tracing::warn!("[Claude] Account {} marked as forbidden due to 403", email);
+                // 设置 is_forbidden 状态（仅当真正非人机验证类 403 时才进入永久禁用）
+                if let Err(e) = token_manager.set_forbidden(&account_id, &error_text).await {
+                    tracing::error!("Failed to set forbidden status for {}: {}", email, e);
+                } else {
+                    tracing::warn!("[Claude] Account {} marked as forbidden due to 403", email);
+                }
             }
         }
 
@@ -2991,6 +3003,7 @@ mod opus_variant_tests {
             type_: "enabled".to_string(),
             budget_tokens: Some(spec.effective_thinking_budget(client_budget)),
             effort: None,
+            display: None,
         };
 
         assert_eq!(request_thinking.budget_tokens, client_budget);
@@ -3005,6 +3018,7 @@ mod opus_variant_tests {
             type_: "enabled".to_string(),
             budget_tokens: Some(spec.effective_thinking_budget(client_budget)),
             effort: None,
+            display: None,
         };
 
         assert_eq!(request_thinking.budget_tokens, Some(1_024));

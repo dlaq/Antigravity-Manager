@@ -203,7 +203,11 @@
         "health_available_rate": "Sağlıklı Kullanılabilirlik",
         "circuit_break": "Kesildi",
         "health_all_green": "Tamamen Sağlıklı",
-        "abnormal_badge": "{{count}} Anormal"
+        "abnormal_badge": "{{count}} Anormal",
+        "no_client_account": "Bu uygulama için etkin veya bağlı hesap bulunamadı",
+        "go_switch_account": "Hesap değiştirmeye git",
+        "switch_best_to_target": "En iyi hesabı {{target}} olarak değiştir",
+        "switch_this_to_target": "Bu hesabı {{target}} olarak değiştir"
     },
     "accounts": {
         "account": "Hesap",
@@ -486,7 +490,18 @@
             "auto_sync": "Mevcut Hesabı Otomatik Senkronize Et",
             "auto_sync_desc": "Mevcut aktif hesap bilgilerini periyodik olarak otomatik senkronize et",
             "sync_interval": "Senkronizasyon Aralığı (saniye)",
-            "always_on": "Always On"
+            "always_on": "Always On",
+            "auto_switch_classic": "Classic Otomatik Hızlı Geçiş",
+            "auto_switch_classic_badge": "Yalnızca Classic",
+            "auto_switch_classic_desc": "Periyodik kontrolde Antigravity Classic mevcut hesabının kotası eşiğin altına düştüğünde, havuzdaki en uygun hesaba kesintisiz otomatik geçiş yapar (Yalnızca Classic Standalone için geçerlidir; IDE ve CLI istemci mimarisi kısıtlamaları nedeniyle desteklenmez).",
+            "auto_switch_threshold_label": "Geçiş Tetikleme Eşiği",
+            "auto_switch_threshold_hint": "İzlenen herhangi bir kota havuzu ≤ {{pct}}% olduğunda geçişi tetikle",
+            "auto_switch_models_label": "İzlenen Kota Havuzları",
+            "auto_switch_models_hint": "En az birini seçin. Seçilen havuzlardan herhangi biri eşiğin altına düşerse geçiş tetiklenir.",
+            "auto_switch_gemini": "Gemini Havuzu",
+            "auto_switch_gemini_desc": "Pro / Flash / Görsel dahil",
+            "auto_switch_third_party": "Üçüncü Taraf Modeller",
+            "auto_switch_third_party_desc": "Claude 3.7 / 3.5 / GPT dahil"
         },
         "pinned_quota_models": {
             "title": "Sabitlenmiş Kota Modelleri",
@@ -1406,9 +1421,13 @@
             "toast": {
                 "config_missing": "Lütfen önce bir API anahtarı oluşturun ve hizmeti başlatın",
                 "sync_success": "Başarılı! {{name}} kullanıma hazır.",
-                "sync_error": "{{name}} senkronizasyon hatası: {{error}}"
+                "sync_error": "{{name}} senkronizasyon hatası: {{error}}",
+                "sync_success_with_model": "{{name}} başarıyla senkronize edildi. Model: {{model}}"
             },
-            "model_select": "Select Model"
+            "model_select": "Select Model",
+            "apps": {
+                "gemini": "Antigravity CLI (agy)"
+            }
         },
         "supported_models": {
             "title": "Desteklenen Modeller ve Entegrasyon",

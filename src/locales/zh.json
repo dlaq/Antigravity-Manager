@@ -217,7 +217,11 @@
         "health_available_rate": "健康可用率",
         "circuit_break": "熔断",
         "health_all_green": "全绿无风险",
-        "abnormal_badge": "{{count}} 异常"
+        "abnormal_badge": "{{count}} 异常",
+        "no_client_account": "该应用当前暂无登录或绑定的账号",
+        "go_switch_account": "前往切换账号",
+        "switch_best_to_target": "一键切换最佳账号到 {{target}}",
+        "switch_this_to_target": "一键将此账号切换到 {{target}}"
     },
     "accounts": {
         "account": "账号",
@@ -247,6 +251,12 @@
         "delete_selected": "删除 ({{count}})",
         "current": "当前",
         "current_badge": "当前",
+        "client_classic": "经典款",
+        "client_classic_tooltip": "当前 Antigravity 经典款客户端登录账号",
+        "client_ide": "IDE",
+        "client_ide_tooltip": "当前 Antigravity IDE 客户端登录账号",
+        "client_cli": "CLI",
+        "client_cli_tooltip": "当前 Antigravity CLI (agy) 登录账号",
         "disabled": "已禁用",
         "disabled_tooltip": "账号已被禁用（例如 refresh_token 被撤销/过期）。重新授权或更新 Token 后可恢复。",
         "proxy_disabled": "反代已禁用",
@@ -404,13 +414,9 @@
                 "batch_fail": "导入失败"
             },
             "import": {
-                "scheme_a": "方案 A: 自动扫描本地已登录账号",
-                "scheme_a_desc": "自动对本地系统 Keyring/Keychain、Antigravity IDE、插件版及 CLI 进行全量扫描并批量导入已登录账号。",
-                "btn_db": "一键导入所有本地已登录账号",
-                "or": "或者",
-                "scheme_b": "方案 B: 从 V1 版本备份",
-                "scheme_b_desc": "扫描 ~/.antigravity-agent 目录，批量导入旧版本的账号数据。",
-                "btn_v1": "从 V1 备份批量导入",
+                "scheme_a": "自动扫描本地已登录账号",
+                "scheme_a_desc": "自动对本地系统 Keyring/Keychain、Antigravity IDE、经典款及 CLI 进行全量扫描并批量导入已登录账号。",
+                "btn_db": "一键扫描并导入所有本地账号",
                 "btn_custom_db": "从自定义 DB 导入"
             },
             "btn_cancel": "取消",
@@ -505,7 +511,18 @@
             "refresh_interval": "刷新间隔（分钟）",
             "auto_sync": "自动获取当前账号",
             "auto_sync_desc": "定期自动刷新当前活动账号的信息",
-            "sync_interval": "同步间隔（分钟）"
+            "sync_interval": "同步间隔（分钟）",
+            "auto_switch_classic": "经典款自动热切换",
+            "auto_switch_classic_badge": "仅限经典款",
+            "auto_switch_classic_desc": "后台定时巡检发现经典款原生客户端当前账号配额低于阈值时，自动从账号池挑选高额度可用账号无感热切换（仅支持经典款原生客户端，IDE 款与 CLI 受官方客户端机制限制暂不支持无感热切）。",
+            "auto_switch_threshold_label": "触发换号阈值",
+            "auto_switch_threshold_hint": "任一监控算力池剩余配额 ≤ {{pct}}% 时触发自动换号",
+            "auto_switch_models_label": "监控额度池",
+            "auto_switch_models_hint": "至少选择一个，任一所选池额度低于阈值即自动换号",
+            "auto_switch_gemini": "Gemini 算力池",
+            "auto_switch_gemini_desc": "包含 Pro / Flash / 绘图",
+            "auto_switch_third_party": "第三方模型池",
+            "auto_switch_third_party_desc": "包含 Claude 3.7 / 3.5 / GPT"
         },
         "warmup": {
             "title": "7天周配额智能预热",
@@ -1467,10 +1484,14 @@
             },
             "toast": {
                 "sync_success": "同步成功！{{name}} 已准备就绪。",
-                "sync_error": "同步失败：{{error}}"
+                "sync_error": "同步失败：{{error}}",
+                "sync_success_with_model": "同步成功！{{name}} 已同步模型: {{model}}"
             },
             "sync_confirm_title": "同步确认",
-            "sync_confirm_message": "即将为您同步 {{name}} 的配置。⚠️ 注意：此操作将覆盖您本地已有的配置文件（如登录状态、API Key 等）。确定要继续吗？"
+            "sync_confirm_message": "即将为您同步 {{name}} 的配置。⚠️ 注意：此操作将覆盖您本地已有的配置文件（如登录状态、API Key 等）。确定要继续吗？",
+            "apps": {
+                "gemini": "Antigravity CLI (agy)"
+            }
         },
         "hermes_sync": {
             "modal_title": "在 Hermes 中配置 Antigravity Manager",

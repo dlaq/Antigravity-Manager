@@ -204,7 +204,11 @@
         "health_available_rate": "Disponibilidad Saludable",
         "circuit_break": "Interrumpido",
         "health_all_green": "Todo Saludable",
-        "abnormal_badge": "{{count}} Anormales"
+        "abnormal_badge": "{{count}} Anormales",
+        "no_client_account": "No hay ninguna cuenta activa o vinculada para esta aplicación",
+        "go_switch_account": "Ir a cambiar de cuenta",
+        "switch_best_to_target": "Cambiar la mejor cuenta a {{target}}",
+        "switch_this_to_target": "Cambiar esta cuenta a {{target}}"
     },
     "accounts": {
         "account": "Cuenta",
@@ -486,7 +490,18 @@
             "refresh_interval": "Intervalo de Actualización (minutos)",
             "auto_sync": "Sincronización Automática de Cuenta Actual",
             "auto_sync_desc": "Sincronizar automáticamente la información de la cuenta activa periódicamente",
-            "sync_interval": "Intervalo de Sincronización (segundos)"
+            "sync_interval": "Intervalo de Sincronización (segundos)",
+            "auto_switch_classic": "Cambio Rápido Automático en Clásico",
+            "auto_switch_classic_badge": "Solo Clásico",
+            "auto_switch_classic_desc": "Cuando la inspección periódica detecta que la cuota de la cuenta actual en Antigravity Clásico cae por debajo del umbral, cambia automáticamente a la mejor cuenta disponible del grupo (Exclusivo para Classic Standalone; IDE y CLI no son compatibles debido a limitaciones de arquitectura del cliente).",
+            "auto_switch_threshold_label": "Umbral de Activación",
+            "auto_switch_threshold_hint": "Activar cambio cuando cualquier cuota monitoreada sea ≤ {{pct}}%",
+            "auto_switch_models_label": "Grupos de Cuotas Monitoreados",
+            "auto_switch_models_hint": "Seleccione al menos uno. El cambio se activará si cualquier grupo cae por debajo del umbral.",
+            "auto_switch_gemini": "Grupo Gemini",
+            "auto_switch_gemini_desc": "Incluye Pro / Flash / Generación de imágenes",
+            "auto_switch_third_party": "Modelos de Terceros",
+            "auto_switch_third_party_desc": "Incluye Claude 3.7 / 3.5 / GPT"
         },
         "warmup": {
             "title": "Calentamiento Inteligente",
@@ -1427,10 +1442,14 @@
             },
             "toast": {
                 "sync_success": "¡Sincronización exitosa! {{name}} está listo.",
-                "sync_error": "Error de sincronización: {{error}}"
+                "sync_error": "Error de sincronización: {{error}}",
+                "sync_success_with_model": "¡{{name}} sincronizado con éxito con el modelo: {{model}}!"
             },
             "sync_confirm_title": "Confirmación de Sincronización",
-            "sync_confirm_message": "Listo para sincronizar configuración de {{name}}. ⚠️ Advertencia: Esto sobrescribirá sus archivos de configuración locales existentes (ej. tokens de inicio de sesión, Claves API). ¿Está seguro de que desea continuar?"
+            "sync_confirm_message": "Listo para sincronizar configuración de {{name}}. ⚠️ Advertencia: Esto sobrescribirá sus archivos de configuración locales existentes (ej. tokens de inicio de sesión, Claves API). ¿Está seguro de que desea continuar?",
+            "apps": {
+                "gemini": "Antigravity CLI (agy)"
+            }
         },
         "agent_settings": {
             "banner_title": "Funciones exclusivas y gobernanza de optimización de Agent",

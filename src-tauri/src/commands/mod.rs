@@ -192,6 +192,14 @@ pub async fn get_current_account() -> Result<Option<Account>, String> {
     }
 }
 
+/// 获取经典款、Antigravity IDE、Antigravity CLI 三大客户端独立生效的当前账号状态
+#[tauri::command]
+pub async fn get_active_clients_status() -> Result<crate::models::ActiveClientsStatus, String> {
+    tokio::task::spawn_blocking(modules::account::detect_active_clients_status)
+        .await
+        .unwrap_or_else(|_| Err("Task panicked".to_string()))
+}
+
 /// 导出账号（包含 refresh_token）
 use crate::models::AccountExportResponse;
 
@@ -296,10 +304,17 @@ pub async fn refresh_all_quotas_internal(
     }
 
     // 发送全局刷新事件给 UI (如果需要)
-    if let Some(handle) = app_handle {
+    if let Some(handle) = app_handle.as_ref() {
         use tauri::Emitter;
         let _ = handle.emit("accounts://refreshed", ());
     }
+
+    // 经典款配额耗尽自动热切换检查与执行
+    let _ = crate::modules::auto_switch::check_and_auto_switch_classic(
+        proxy_state,
+        app_handle.as_ref(),
+    )
+    .await;
 
     Ok(stats)
 }
