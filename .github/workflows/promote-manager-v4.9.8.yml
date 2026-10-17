@@ -67,8 +67,31 @@ jobs:
           set -euo pipefail
 
           source_tag="v4.9.8-beta.10-assistant-prefill-fix-test"
-          observed="$(docker buildx imagetools inspect "$IMAGE:$source_tag" | awk '/^Digest:/ { print $2; exit }')"
-          test "$observed" = "$SOURCE_DIGEST"
+
+          inspect_source() {
+            local output=""
+            local observed=""
+            local rc=255
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              set +e
+              output="$(docker buildx imagetools inspect "$IMAGE:$source_tag" 2>&1)"
+              rc=$?
+              set -e
+              observed="$(printf '%s\n' "$output" | awk '/^Digest:/ { print $2; exit }')"
+              if [ "$rc" -eq 0 ] && [ "$observed" = "$SOURCE_DIGEST" ]; then
+                return 0
+              fi
+              safe_output="$(printf '%s' "$output" | tr '\n' ' ' | sed -E 's/(password|token|secret)[=:][^ ]+/\1=[REDACTED]/Ig' | cut -c1-600)"
+              echo "source manifest inspect attempt $attempt failed (rc=$rc, observed=$observed): $safe_output" >&2
+              sleep $((attempt * 5))
+            done
+            safe_output="$(printf '%s' "$output" | tr '\n' ' ' | sed -E 's/(password|token|secret)[=:][^ ]+/\1=[REDACTED]/Ig' | cut -c1-600)"
+            echo "::error::source manifest verification failed after 5 attempts (rc=$rc, observed=$observed): $safe_output"
+            return 255
+          }
+
+          inspect_source
 
           create_manifest() {
             local target="$1"
