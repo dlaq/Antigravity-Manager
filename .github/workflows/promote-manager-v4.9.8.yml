@@ -1,8 +1,8 @@
-name: Promote Manager beta.6 image
+name: Promote Manager beta.10 image
 
 on:
   push:
-    branches: [upgrade/manager-v4.9.8-beta.6-prefill-fix]
+    branches: [upgrade/manager-v4.9.8-beta.10-prefill-fix]
     paths:
       - ".github/workflows/promote-manager-v4.9.8.yml"
   workflow_dispatch:
@@ -55,23 +55,23 @@ jobs:
           printf '%s' "$token" | docker login --username "$username" --password-stdin
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
-      - name: Promote verified beta.6 manifest
+      - name: Promote verified beta.10 manifest
         shell: bash
         env:
           IMAGE: ${{ steps.docker.outputs.image }}
-          SOURCE_DIGEST: sha256:561c2477495a6e3bb6fb0ddcdd7fca3389fa2a6bf4a1377499d3c10d2b3e7a6d
+          SOURCE_DIGEST: sha256:d8faf414d801c8782f0585682ccfc71f8cc1e0d5b241d3f63a3b60fb3071b3ea
         run: |
           set -euo pipefail
 
-          source_tag="v4.9.8-beta.6-assistant-prefill-fix-test"
+          source_tag="v4.9.8-beta.10-assistant-prefill-fix-test"
           observed="$(docker buildx imagetools inspect "$IMAGE:$source_tag" | awk '/^Digest:/ { print $2; exit }')"
           test "$observed" = "$SOURCE_DIGEST"
 
           docker buildx imagetools create \
-            --tag "$IMAGE:v4.9.8-beta.6-assistant-prefill-fix" \
+            --tag "$IMAGE:v4.9.8-beta.10-assistant-prefill-fix" \
             "$IMAGE@$SOURCE_DIGEST"
           docker buildx imagetools create \
-            --tag "$IMAGE:assistant-prefill-fix-v4.9.8-beta.6" \
+            --tag "$IMAGE:assistant-prefill-fix-v4.9.8-beta.10" \
             "$IMAGE@$SOURCE_DIGEST"
 
       - name: Verify promoted manifests
@@ -81,8 +81,8 @@ jobs:
         run: |
           set -euo pipefail
           for tag in \
-            v4.9.8-beta.6-assistant-prefill-fix \
-            assistant-prefill-fix-v4.9.8-beta.6; do
+            v4.9.8-beta.10-assistant-prefill-fix \
+            assistant-prefill-fix-v4.9.8-beta.10; do
             docker buildx imagetools inspect "$IMAGE:$tag"
             docker buildx imagetools inspect "$IMAGE:$tag" | grep -Eq 'Platform: +linux/amd64'
             docker buildx imagetools inspect "$IMAGE:$tag" | grep -Eq 'Platform: +linux/arm64'
