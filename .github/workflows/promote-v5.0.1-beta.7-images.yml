@@ -1,0 +1,131 @@
+name: Promote verified beta.7 compatibility images
+
+on:
+  push:
+    branches: [upgrade/manager-v5.0.1-beta.7-prefill-fix]
+    paths:
+      - ".github/workflows/promote-v5.0.1-beta.7-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  DOCKERHUB_USERNAME_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_USERNAME_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+  DOCKER_USERNAME_SECRET: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_USERNAME_VAR: ${{ vars.DOCKER_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  DOCKERHUB_ACCESS_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+  DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Resolve Docker Hub credentials
+        id: docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          username="${DOCKERHUB_USERNAME_SECRET:-${DOCKERHUB_USERNAME_VAR:-${DOCKER_USERNAME_SECRET:-${DOCKER_USERNAME_VAR:-${GITHUB_REPOSITORY_OWNER:-dlaq}}}}}"
+          token="${DOCKERHUB_TOKEN:-${DOCKERHUB_ACCESS_TOKEN:-${DOCKERHUB_PASSWORD:-${DOCKER_PASSWORD:-${DOCKER_TOKEN:-}}}}}"
+          if [ -z "$token" ]; then
+            echo "::error::Docker Hub credential is not configured."
+            exit 1
+          fi
+          image="${GITHUB_REPOSITORY_OWNER:-dlaq}/antigravity-manager"
+          image="$(printf '%s' "$image" | tr '[:upper:]' '[:lower:]')"
+          echo "::add-mask::$token"
+          printf '%s' "$token" | docker login --username "$username" --password-stdin
+          echo "manager_image=$image" >> "$GITHUB_OUTPUT"
+          echo "aistudio_image=${GITHUB_REPOSITORY_OWNER:-dlaq}/aistudio-to-api" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote verified manifests
+        shell: bash
+        env:
+          MANAGER_IMAGE: ${{ steps.docker.outputs.manager_image }}
+          AISTUDIO_IMAGE: ${{ steps.docker.outputs.aistudio_image }}
+          MANAGER_SOURCE_DIGEST: sha256:daf7ad41a5b398910576de005763be956cbd130251d671d7815b1377d477ce98
+          AISTUDIO_SOURCE_DIGEST: sha256:633fdab163a327937384b8794bc305a8ec47366de1d5b07572403cdda6141546
+        run: |
+          set -euo pipefail
+
+          inspect_manifest() {
+            local ref="$1" expected="$2" label="$3" output observed rc safe_output attempt
+            for attempt in 1 2 3 4 5; do
+              set +e
+              output="$(docker buildx imagetools inspect "$ref" 2>&1)"
+              rc=$?
+              set -e
+              observed="$(printf '%s\n' "$output" | awk '/^Digest:/ { print $2; exit }')"
+              if [ "$rc" -eq 0 ] && [ "$observed" = "$expected" ]; then
+                echo "$label source manifest verified: $observed"
+                return 0
+              fi
+              safe_output="$(printf '%s' "$output" | tr '\n' ' ' | sed -E 's/(password|token|secret)[=:][^ ]+/\1=[REDACTED]/Ig' | cut -c1-600)"
+              echo "source manifest inspect attempt $attempt failed for $label (rc=$rc, observed=$observed): $safe_output" >&2
+              sleep $((attempt * 5))
+            done
+            echo "::error::source manifest verification failed for $label"
+            return 1
+          }
+
+          create_manifest() {
+            local source="$1" target="$2" output rc safe_output attempt
+            for attempt in 1 2 3 4 5; do
+              set +e
+              output="$(docker buildx imagetools create --tag "$target" "$source" 2>&1)"
+              rc=$?
+              set -e
+              if [ "$rc" -eq 0 ]; then
+                echo "promoted $source -> $target"
+                return 0
+              fi
+              safe_output="$(printf '%s' "$output" | tr '\n' ' ' | sed -E 's/(password|token|secret)[=:][^ ]+/\1=[REDACTED]/Ig' | cut -c1-600)"
+              echo "manifest promotion attempt $attempt failed (rc=$rc): $safe_output" >&2
+              sleep $((attempt * 5))
+            done
+            echo "::error::manifest promotion failed: $target"
+            return 1
+          }
+
+          verify_manifest() {
+            local ref="$1" expected="$2" label="$3" output observed rc attempt
+            for attempt in 1 2 3 4 5; do
+              set +e
+              output="$(docker buildx imagetools inspect "$ref" 2>&1)"
+              rc=$?
+              set -e
+              observed="$(printf '%s\n' "$output" | awk '/^Digest:/ { print $2; exit }')"
+              if [ "$rc" -eq 0 ] && [ "$observed" = "$expected" ] && \
+                 printf '%s\n' "$output" | grep -q 'linux/amd64' && \
+                 printf '%s\n' "$output" | grep -q 'linux/arm64'; then
+                echo "$label verified: digest=$observed platforms=linux/amd64,linux/arm64"
+                return 0
+              fi
+              echo "stable manifest verification attempt $attempt failed for $label (rc=$rc, observed=$observed)" >&2
+              sleep $((attempt * 5))
+            done
+            echo "::error::stable manifest verification failed for $label"
+            return 1
+          }
+
+          inspect_manifest "$MANAGER_IMAGE:v5.0.1-beta.7-assistant-prefill-fix-test" "$MANAGER_SOURCE_DIGEST" "Manager"
+          inspect_manifest "$AISTUDIO_IMAGE:v1.4.1-assistant-prefill-fix-test" "$AISTUDIO_SOURCE_DIGEST" "AIStudioToAPI"
+          create_manifest "$MANAGER_IMAGE:v5.0.1-beta.7-assistant-prefill-fix-test" "$MANAGER_IMAGE:v5.0.1-beta.7-assistant-prefill-fix"
+          create_manifest "$MANAGER_IMAGE:assistant-prefill-fix-v5.0.1-beta.7-test" "$MANAGER_IMAGE:assistant-prefill-fix-v5.0.1-beta.7"
+          create_manifest "$AISTUDIO_IMAGE:v1.4.1-assistant-prefill-fix-test" "$AISTUDIO_IMAGE:v1.4.1-assistant-prefill-fix"
+          create_manifest "$AISTUDIO_IMAGE:assistant-prefill-fix-v1.4.1-test" "$AISTUDIO_IMAGE:assistant-prefill-fix-v1.4.1"
+          verify_manifest "$MANAGER_IMAGE:v5.0.1-beta.7-assistant-prefill-fix" "$MANAGER_SOURCE_DIGEST" "Manager stable tag"
+          verify_manifest "$MANAGER_IMAGE:assistant-prefill-fix-v5.0.1-beta.7" "$MANAGER_SOURCE_DIGEST" "Manager alias tag"
+          verify_manifest "$AISTUDIO_IMAGE:v1.4.1-assistant-prefill-fix" "$AISTUDIO_SOURCE_DIGEST" "AIStudio stable tag"
+          verify_manifest "$AISTUDIO_IMAGE:assistant-prefill-fix-v1.4.1" "$AISTUDIO_SOURCE_DIGEST" "AIStudio alias tag"
